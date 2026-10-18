@@ -11,7 +11,7 @@ beforeEach(async () => {
 
 const draft = (visit = 'v1') => ({
   visit_id: visit, parcel_id: visit === 'v1' ? 'p1' : 'p2', parcel_name: `Saved parcel ${visit}`,
-  data_origin: 'user', client_submission_id: `submission-${visit}`,
+  data_origin: 'user', client_submission_id: crypto.randomUUID(),
   observed_at: '2026-10-17T12:34:56.000Z', label: 'uncertain', note: `Saved observation ${visit}`,
   photos: [{ key: `photo-${visit}`, name: `${visit}.png`, uploaded_id: `uploaded-${visit}`,
     blob: new Blob([`Saved photo bytes ${visit}`], { type: 'image/png' }) }],
@@ -20,7 +20,7 @@ const draft = (visit = 'v1') => ({
 });
 
 async function storedUI(t, { count = 1, writeFailure = new DOMException('Storage is read-only', 'ReadOnlyError') } = {}) {
-  for (let i = 1; i <= count; i++) await saveDraft(draft(`v${i}`));
+  for (let i = 1; i <= count; i++) await saveDraft(draft(`v${i}`),true);
   const originals = await listDrafts();
   const ui = harness(), writes = [], uploads = [], createdUrls = [], revokedUrls = [];
   const storage = { writeFailure, readFailure: undefined };

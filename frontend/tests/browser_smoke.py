@@ -80,7 +80,7 @@ with sync_playwright() as p:
     phone.route('**/api/v1/**',lambda route:route.abort('internetdisconnected'))
     phone.get_by_role('button',name='提交核查',exact=True).click()
     phone.get_by_text('草稿和照片未删除。',exact=False).wait_for()
-    stored=phone.evaluate("""async () => await new Promise((resolve,reject)=>{const q=indexedDB.open('fieldsignal-local-drafts',1);q.onsuccess=()=>{const r=q.result.transaction('verifications').objectStore('verifications').getAll();r.onsuccess=()=>resolve(r.result.map(x=>({note:x.note,photos:x.photos.length,bytes:x.photos[0]?.blob.size,state:x.state,key:x.client_submission_id})));};q.onerror=reject;})""")
+    stored=phone.evaluate("""async () => await new Promise((resolve,reject)=>{const q=indexedDB.open('fieldsignal-local-drafts',2);q.onsuccess=()=>{const r=q.result.transaction('verifications').objectStore('verifications').getAll();r.onsuccess=()=>resolve(r.result.filter(x=>!x.removed).map(x=>({note:x.note,photos:x.photos.length,bytes:x.photos[0]?.blob.size,state:x.state,key:x.client_submission_id})));};q.onerror=reject;})""")
     assert len(stored)==1 and stored[0]['state']=='error' and stored[0]['photos']==1 and stored[0]['bytes']>0
     phone.screenshot(path=str(OUT/'field-offline-draft.png'),full_page=True)
     phone.get_by_role('button',name='保存并返回',exact=True).click()

@@ -20,3 +20,5 @@
  .schedule-note{margin:0 20px 8px}
 
 .record-top{flex-wrap:wrap}.record-top small,.field-main .record-top small{font-size:11px;line-height:1.6}.record-top small span{display:block}.history-note{margin:0 20px 8px}
+
+.draft-item{margin-bottom:10px;border:1px solid #dfe5d8;border-radius:9px;overflow:hidden;background:#fcfdf8}.draft-item .draft-row{border:0;margin:0;border-radius:0;padding:15px 16px}.draft-remove{display:block;margin:0 16px 10px;min-height:44px;color:#98513e}.destructive{background:#8b4135;color:#fff;border-color:#8b4135}

@@ -14,10 +14,10 @@ async function verification() {
   const writes = [], uploads = [];
   let failure;
   ui.context.listDrafts = listDrafts;
-  ui.context.saveDraft = async draft => {
+  ui.context.saveDraft = async (draft,startNew) => {
     writes.push(structuredClone(draft));
     if (failure) throw failure;
-    await saveDraft(draft);
+    await saveDraft(draft,startNew);
   };
   ui.context.uploadVerificationDraft = async draft => {
     uploads.push(structuredClone(draft));
