@@ -2,7 +2,7 @@ import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import 'fake-indexeddb/auto';
 import { saveDraft, listDrafts, clearDraft } from '../src/drafts.ts';
-import { harness, deferred, turn } from './helpers/ui-harness.mjs';
+import { verificationResult, harness, deferred, turn } from './helpers/ui-harness.mjs';
 
 globalThis.window = { indexedDB: globalThis.indexedDB };
 beforeEach(async () => {
@@ -39,6 +39,7 @@ async function storedUI(t, { count = 1, writeFailure = new DOMException('Storage
   ui.context.uploadVerificationDraft = async value => {
     uploads.push(structuredClone(value));
     await clearDraft(value);
+    return verificationResult(value);
   };
   // Photo DOM nodes are enough to exercise the production renderer and its
   // object URL cleanup; this is not browser/visual QA.
@@ -202,6 +203,7 @@ test('explicit submit after storage recovers writes current and pending-upload r
     assert.equal(persisted.revision, value.revision);
     ui.uploads.push(structuredClone(value));
     await clearDraft(value);
+    return verificationResult(value);
   };
   await ui.submit();
   assert.deepEqual(savedStates, [['draft', ui.originals[0].revision + 1], ['pending_upload', ui.originals[0].revision + 2]]);

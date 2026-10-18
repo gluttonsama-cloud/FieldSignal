@@ -98,3 +98,6 @@ export function harness({ pathname = '/admin' } = {}) {
   };
 }
 
+
+// Acknowledged API result for UI upload stubs; production sync validates it.
+export const verificationResult = draft => ({ id: `record-${draft.visit_id}`, visit_id: draft.visit_id, parcel_id: draft.parcel_id, observed_at: draft.observed_at, label: draft.label, note: draft.note, photo_ids: draft.photos.map(photo => photo.uploaded_id).filter(Boolean), client_submission_id: draft.client_submission_id, created_at: '2026-10-18T12:00:00Z' });

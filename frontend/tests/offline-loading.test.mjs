@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as display from '../src/display.ts';
-import { harness, deferred, turn } from './helpers/ui-harness.mjs';
+import { verificationResult, harness, deferred, turn } from './helpers/ui-harness.mjs';
 
 const dashboard = () => ({ parcel_count: 0, open_risk_count: 0, pending_visit_count: 0,
   verification_count: 0, parcels: [], recent_verifications: [] });
@@ -29,6 +29,7 @@ function fieldUi() {
   ui.context.uploadVerificationDraft = async value => {
     uploads.push(structuredClone(value));
     stored = stored.filter(item => item.visit_id !== value.visit_id);
+    return verificationResult(value);
   };
   ui.context.post = async (...args) => { posts.push(args); return {}; };
   ui.run("refresh=realRefresh; render=()=>{document.querySelector('#app').innerHTML=renderField();}; dashboard.parcels=[]; selectedId=''; visits=[];");

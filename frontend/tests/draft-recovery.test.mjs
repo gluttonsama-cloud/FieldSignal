@@ -2,7 +2,7 @@ import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import 'fake-indexeddb/auto';
 import { saveDraft, listDrafts, clearDraft, DraftConflictError } from '../src/drafts.ts';
-import { harness, deferred, turn } from './helpers/ui-harness.mjs';
+import { verificationResult, harness, deferred, turn } from './helpers/ui-harness.mjs';
 
 globalThis.window = { indexedDB: globalThis.indexedDB };
 beforeEach(async () => {
@@ -22,6 +22,7 @@ async function verification() {
   ui.context.uploadVerificationDraft = async draft => {
     uploads.push(structuredClone(draft));
     await clearDraft(draft);
+    return verificationResult(draft);
   };
   await ui.run("openVerification('v1')");
   ui.context.photo = { key: 'photo-one', name: 'field.png', uploaded_id: 'uploaded-photo',

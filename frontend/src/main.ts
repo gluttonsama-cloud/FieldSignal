@@ -18,6 +18,7 @@ let risks: Risk[] = [], visits: Visit[] = [], verifications: Verification[] = []
 let drafts: VerificationDraft[] = [];
 let selectedId = '', region = 'all', adminTab = 'overview', fieldTab = 'visits';
 let loading = true, connected = false, loadError = '', detailError = '', storageError = '', lastLoaded = '', detailToken = 0;
+let eventsState: 'idle' | 'loading' | 'ready' | 'error' = 'idle', eventsError = '', eventsParcelId = '';
 let currentDraft: VerificationDraft | undefined;
 let storedDraftView: { draft: VerificationDraft; json: string; blobs: Blob[] } | undefined;
 let saving: Promise<void> = Promise.resolve();
@@ -187,7 +188,14 @@ function renderField() { return `<div class="field-shell"><header class="field-h
 function fieldVisits() { const pending=visits.filter(v=>v.status==='pending'); return `<div class="field-heading"><div class="eyebrow">FIELD CHECKS</div><h1>巡田任务</h1><p>待完成 <strong>${pending.length}</strong> 次巡田 · 本机草稿 <strong>${drafts.length}</strong> 条</p></div>${drafts.length?`<section class="draft-section"><div class="section-tools"><h2>保存在这台设备</h2><span class="badge warning">待提交</span></div>${drafts.map(d=>`<button class="draft-row" data-action="resume-draft" data-id="${esc(d.visit_id)}"><span class="draft-symbol">↥</span><span><strong>${esc(d.parcel_name)}</strong><small>${d.state==='error'?'上次提交未完成，点击重试':d.state==='pending_upload'?'等待手动上传':'草稿已保存'} · ${d.photos.length} 张照片</small>${fixture(d)}</span><span>›</span></button>`).join('')}<p class="caption">草稿和照片保存在当前浏览器。清理网站数据、隐私模式或更换设备可能使其丢失。</p></section>`:''}<div class="section-tools"><h2>待巡田任务</h2><span>${pending.length} 项</span></div>${pending.length?pending.map(v=>visitCard(v)).join(''):empty('暂时没有巡田任务', connected?'可从地块档案安排自主巡田；无需等待遥感观测或异常候选。':'连接本地服务后读取任务；已有草稿仍可继续填写。',dashboard.parcels.length?'<button class="button secondary" data-action="field-tab" data-tab="parcels">选择地块并安排巡田</button>':'')}<div class="field-tip"><span>ⓘ</span><p>先看现场，再记录现象。疑似病害、冻害等选择仅表示你的现场判断。</p></div>`; }
 function parcelPicker() { return `<label class="field-select">选择地块<select id="parcel-picker">${dashboard.parcels.map(p=>`<option value="${esc(p.id)}" ${selectedId===p.id?'selected':''}>${esc(p.name)}${p.data_origin==='fixture'?' · 开发模拟数据':''}</option>`).join('')}</select></label>`; }
 function fieldParcels() { const p=selected(); return `<div class="field-heading"><div class="eyebrow">MY PARCELS</div><h1>地块档案</h1><p>观测、农事与现场情况，放在一起看。</p></div>${!p?empty('还没有地块', '请先在管理端录入地块与边界。','<a href="/admin" class="button secondary">打开管理端</a>'):`${parcelPicker()}<section class="card field-parcel"><div class="card-head"><h2>${esc(p.name)}</h2>${fixture(p)}</div><div class="parcel-facts"><span>${regions[p.region]}</span><span>油菜 · ${esc(p.season)}</span><span>${Number(p.area_ha).toFixed(2)} ha</span></div><div class="map-surface small-map">${boundaryMap([p],p.id)}</div><p class="map-attribution">地块边界示意，未加载外部底图</p><div class="field-quality">${badge(p.data_status)}<small>最近观测：${esc(fmtDate(p.latest_observed_at))}</small></div></section><section class="card field-chart"><div class="card-head"><h3>NDVI 变化</h3></div>${detailError?`<p class="notice danger">${esc(detailError)}</p>`:trend(observations)}</section><div class="field-actions"><button class="button primary full" data-action="new-routine-visit">安排自主巡田</button><button class="button secondary full" data-action="new-event">＋ 记一笔农事</button></div><p class="caption">自主巡田无需异常候选。新任务需连接本地服务创建；已有核查草稿可离线填写。</p>`}`; }
-function fieldRecords() { const p=selected(); const records=verifications.filter(v=>!p||v.parcel_id===p.id); return `<div class="field-heading"><div class="eyebrow">FIELD JOURNAL</div><h1>田间记录</h1><p>每次核查、每笔农事，都有迹可循。</p></div>${p?parcelPicker():''}<section class="card"><div class="card-head"><h3>现场核查</h3><span>${records.length} 条</span></div>${records.length?records.map(recordCard).join(''):empty('暂无核查记录','完成现场核查后显示；本机草稿仍在「巡田」页。')}</section><section class="card below"><div class="card-head"><h3>农事记录</h3>${p?'<button class="text-button" data-action="new-event">＋ 添加</button>':''}</div>${events.length?events.map(e=>`<article class="event-row"><span class="event-symbol">≋</span><div><h3>${esc(kinds[e.kind]||e.kind)} ${fixture(p)}</h3><small>${esc(fmtDate(e.occurred_on))}</small><p>${esc(e.note||'无备注')}</p></div></article>`).join(''):empty('暂无农事记录','记录播种、施肥、植保作业和排水情况。')}</section>`; }
+function fieldRecords() { const p=selected(); const records=verifications.filter(v=>!p||v.parcel_id===p.id); return `<div class="field-heading"><div class="eyebrow">FIELD JOURNAL</div><h1>田间记录</h1><p>每次核查、每笔农事，都有迹可循。</p></div>${p?parcelPicker():''}<section class="card"><div class="card-head"><h3>现场核查</h3><span>${records.length} 条</span></div>${records.length?records.map(recordCard).join(''):empty('暂无核查记录','完成现场核查后显示；本机草稿仍在「巡田」页。')}</section><section class="card below"><div class="card-head"><h3>农事记录</h3>${p?'<button class="text-button" data-action="new-event">＋ 添加</button>':''}</div>${eventHistory(p)}</section>`; }
+function eventHistory(p?: Parcel) {
+  if(!p)return empty('请选择地块','选择地块后读取对应农事记录。');
+  if(eventsParcelId!==p.id)return '<p class="notice" role="status">此地块农事记录尚未读取。 <button class="text-button" data-action="refresh-detail">读取记录</button></p>';
+  if(eventsState==='loading')return '<p class="notice" role="status">正在读取农事记录…</p>';
+  if(eventsState!=='ready')return `<div class="notice ${eventsState==='error'?'danger':''}" ${eventsState==='error'?'role="alert"':''}>${eventsState==='error'?`农事记录未能读取：${esc(eventsError)}`:'农事记录尚未读取。'} <button class="text-button" data-action="refresh-detail">重试读取</button></div>`;
+  return events.length?events.map(e=>`<article class="event-row"><span class="event-symbol">≋</span><div><h3>${esc(kinds[e.kind]||e.kind)} ${fixture(p)}</h3><small>${esc(fmtDate(e.occurred_on))}</small><p>${esc(e.note||'无备注')}</p></div></article>`).join(''):empty('暂无农事记录','记录播种、施肥、植保作业和排水情况。');
+}
 async function refreshDraftList(serviceRefresh?: number) {
   const token=++draftReadToken,epoch=draftEpoch;
   const current=()=>token===draftReadToken&&epoch===draftEpoch&&(serviceRefresh===undefined||serviceRefresh===refreshToken);
@@ -212,11 +220,27 @@ async function refresh() {
   await localDrafts;
   if(token===refreshToken&&!isField&&adminTab==='sources')await sourceController.refresh();
 }
+function clearDetail() {
+  ++detailToken;detailError='';eventsError='';observations=[];analyses=[];events=[];eventsParcelId='';eventsState='idle';
+}
 async function loadDetail() {
-  const token=++detailToken; const id=selectedId; detailError=''; observations=[]; analyses=[]; events=[];
-  if(!id) return;
-  try { const [o,a,e]=await Promise.all([api<Observation[]>(`/parcels/${encodeURIComponent(id)}/observations`),api<Analysis[]>(`/parcels/${encodeURIComponent(id)}/analyses`),api<FarmEvent[]>(`/parcels/${encodeURIComponent(id)}/events`)]); if(token===detailToken){observations=o; analyses=a.slice().sort((x,y)=>+new Date(y.evaluated_at)-+new Date(x.evaluated_at)); events=e.slice().sort((x,y)=>y.occurred_on.localeCompare(x.occurred_on));} }
-  catch(error) { if(token===detailToken) detailError=msg(error); }
+  clearDetail();const token=detailToken,id=selectedId;
+  eventsParcelId=id;eventsState=id?'loading':'idle';
+  if(!id)return;
+  render();
+  // Farm history remains usable even if observation/analysis reads fail or stall.
+  await Promise.all([
+    (async()=>{
+      try { const [o,a]=await Promise.all([api<Observation[]>(`/parcels/${encodeURIComponent(id)}/observations`),api<Analysis[]>(`/parcels/${encodeURIComponent(id)}/analyses`)]);if(token===detailToken){observations=o;analyses=a.slice().sort((x,y)=>+new Date(y.evaluated_at)-+new Date(x.evaluated_at));} }
+      catch(error) { if(token===detailToken)detailError=msg(error); }
+      finally { if(token===detailToken)render(); }
+    })(),
+    (async()=>{
+      try { const result=await api<FarmEvent[]>(`/parcels/${encodeURIComponent(id)}/events`);if(token===detailToken){events=result.slice().sort((x,y)=>y.occurred_on.localeCompare(x.occurred_on));eventsState='ready';} }
+      catch(error) { if(token===detailToken){eventsError=msg(error);eventsState='error';} }
+      finally { if(token===detailToken)render(); }
+    })(),
+  ]);
 }
 // Invalidate synchronously: native close events may arrive after another dialog opens.
 function closeModal() { ++dialogSession; storedDraftView=undefined; modal.close(); revokePhotos(); }
@@ -298,7 +322,8 @@ async function flushDraft() {
 async function submitVerification() {
   if(!currentDraft||submitting)return;
   storedDraftView=undefined;
-  submitting=true;const d=currentDraft;let uploadStarted=false;
+  submitting=true;const d=currentDraft,session=dialogSession;let uploadStarted=false;
+  const ownsDialog=()=>session===dialogSession&&currentDraft===d;
   const fields=modal.querySelector<HTMLFieldSetElement>('#verification-fields');if(fields)fields.disabled=true;
   try {
     await flushDraft();
@@ -306,31 +331,47 @@ async function submitVerification() {
     uploadStarted=true;
     const status=modal.querySelector('#draft-save');if(status)status.textContent='正在上传至本地服务，请勿关闭…';
     ++draftEpoch;
-    try { await uploadVerificationDraft(d); } finally { ++draftEpoch; }
-    currentDraft=undefined;closeModal();toast('核查已保存，巡田任务已完成。');await refresh();
+    let result: Verification;
+    try { result=await uploadVerificationDraft(d); } finally { ++draftEpoch; }
+    // Keep the acknowledged record visible if the following list refresh fails.
+    verifications=[result,...verifications.filter(item=>item.id!==result.id)];
+    visits=visits.map(visit=>visit.id===result.visit_id?{...visit,status:'completed'}:visit);
+    const sameSession=session===dialogSession&&currentDraft===d;
+    if(currentDraft===d){currentDraft=undefined;storedDraftView=undefined;}
+    if(sameSession){
+      closeModal();
+      if(isField){
+        if(selectedId!==d.parcel_id){selectedId=d.parcel_id;clearDetail();detailError='此地块详情尚未读取，请刷新后查看。';}
+        fieldTab='records';
+      }
+    }
+    toast('核查已保存，巡田任务已完成。');await refresh();
   } catch(error) {
     d.state='error';d.error=msg(error);
     if(!uploadStarted){
-      showDraftSaveFailure(error);
-      formError(`${d.error} 本次尚未发送核查，请先保存当前编辑。`);
+      if(ownsDialog()){showDraftSaveFailure(error);formError(`${d.error} 本次尚未发送核查，请先保存当前编辑。`);}else toast(`先前核查尚未发送：${d.error}`);
     } else {
       let saveError: unknown;
       try{await writeDraft(d);}catch(storage){saveError=storage;d.error+=` ${msg(storage)}`;}
-      formError(`${d.error} 草稿和照片未删除。`);
-      if(saveError)showDraftSaveFailure(saveError);
-      else {
-        const status=modal.querySelector('#draft-save');
-        if(status)status.textContent=d.error.includes('提交已确认')?'服务端已确认提交 · 本机新版草稿已保留，请先查看记录':'草稿已保存在本机 · 提交未完成，请手动重试';
-      }
+      if(ownsDialog()){
+        formError(`${d.error} 草稿和照片未删除。`);
+        if(saveError)showDraftSaveFailure(saveError);
+        else {
+          const status=modal.querySelector('#draft-save');
+          if(status)status.textContent=d.error.includes('提交已确认')?'服务端已确认提交 · 本机新版草稿已保留，请先查看记录':'草稿已保存在本机 · 提交未完成，请手动重试';
+        }
+      }else toast(`先前核查提交未确认：${d.error}`);
     }
-    const submit=modal.querySelector<HTMLButtonElement>('button[type="submit"]');if(submit)submit.textContent='重试提交核查';
-    renderDraftPhotos();
+    if(ownsDialog()){
+      const submit=modal.querySelector<HTMLButtonElement>('button[type="submit"]');if(submit)submit.textContent='重试提交核查';
+      renderDraftPhotos();
+    }
   } finally {submitting=false;if(fields)fields.disabled=false;}
 }
 
 app.addEventListener('change',async event=>{const target=event.target as HTMLSelectElement;if(target.id==='region-filter'){++dialogSession;region=target.value;const list=shownParcels();if(!list.some(p=>p.id===selectedId)){selectedId=list[0]?.id||'';await loadDetail();}render();}if(target.id==='parcel-picker'){++dialogSession;selectedId=target.value;await loadDetail();render();}});
 document.addEventListener('click',async event=>{ const button=(event.target as Element).closest<HTMLElement>('[data-action]');if(!button)return;const action=button.dataset.action,id=button.dataset.id||'';const actionSession=dialogSession;
-  try { if(action==='refresh')return await refresh(); if(action==='admin-tab'){++dialogSession;adminTab=button.dataset.tab!;render();if(adminTab==='sources')await sourceController.refresh();} if(action==='refresh-sources')return await sourceController.refresh(); if(action==='import-public-sample')return await sourceController.importSample(); if(action==='field-tab'){++dialogSession;fieldTab=button.dataset.tab!;render();window.scrollTo({top:0});} if(action==='select-parcel'){++dialogSession;selectedId=id;await loadDetail();render();}
+  try { if(action==='refresh')return await refresh(); if(action==='refresh-detail')return await loadDetail(); if(action==='admin-tab'){++dialogSession;adminTab=button.dataset.tab!;render();if(adminTab==='sources')await sourceController.refresh();} if(action==='refresh-sources')return await sourceController.refresh(); if(action==='import-public-sample')return await sourceController.importSample(); if(action==='field-tab'){++dialogSession;fieldTab=button.dataset.tab!;render();window.scrollTo({top:0});} if(action==='select-parcel'){++dialogSession;selectedId=id;await loadDetail();render();}
     if(action==='new-parcel')parcelModal();if(action==='import-observation')observationModal();if(action==='new-visit')visitModal(id);if(action==='new-routine-visit')visitModal();if(action==='new-event')eventModal();if(action==='verify'||action==='resume-draft')await openVerification(id);
     if(action==='close-dialog'||action==='save-close'){if(submitting)return;const session=++dialogSession;await flushDraft();if(session!==dialogSession)return;closeModal();currentDraft=undefined;await refreshDraftList();}
     if(action==='retry-draft-save'&&currentDraft&&!submitting){if((button as HTMLButtonElement).disabled)return;await flushDraft();if(actionSession===dialogSession){const error=modal.querySelector<HTMLElement>('.form-error');if(error)error.hidden=true;renderDraftPhotos();toast('草稿已重新保存到本机。');}}
