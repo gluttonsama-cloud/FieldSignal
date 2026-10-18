@@ -15,3 +15,6 @@
 .field-actions{display:grid;gap:10px}.visit-card .visit-origin{font-size:11px;color:#657954}
 
 .geometry-preview:empty{display:none}.geometry-preview{background:#f0f4e7;border:1px solid #dce4d0;border-radius:8px;margin:12px 0}.geometry-preview .boundary-svg{height:180px;min-height:0}
+
+.visit-top{flex-wrap:wrap}.visit-top .schedule-late{color:#87551f}.visit-top .schedule-today{color:#2c5b3e;font-weight:600}
+ .schedule-note{margin:0 20px 8px}
