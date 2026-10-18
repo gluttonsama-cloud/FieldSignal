@@ -6,6 +6,7 @@ import { parseObservationInput, observationImportSummary } from '../../src/obser
 import { recordPhotoStrip, recordPhotoViewer, bindRecordPhotoEvents, retryRecordPhoto, zoomRecordPhoto } from '../../src/record-photos.ts';
 import { shortParcelId } from '../../src/display.ts';
 import { verificationNoteError } from '../../src/sync.ts';
+import { recordCandidate, candidateSnapshot, candidateObservations } from '../../src/candidate-evidence.ts';
 import { ApiError } from '../../src/api.ts';
 import { DraftConflictError } from '../../src/drafts.ts';
 
@@ -39,6 +40,7 @@ export function harness({ pathname = '/admin' } = {}) {
       this.html = html;
       this.error = status();
       this.saveStatus = status();
+      this.candidateObservations = html.includes('id="candidate-observations"') ? {innerHTML:''} : undefined;
       this.retrySave = html.includes('id="retry-draft-save"') ? new Button({ action: 'retry-draft-save' }) : undefined;
       const tag = html.match(/<form\b([^>]*)>/)?.[1];
       if (!tag) { this.form = undefined; return; }
@@ -62,6 +64,8 @@ export function harness({ pathname = '/admin' } = {}) {
     },
     contains(element) { return element === this.form; },
     querySelector(selector) {
+      if (selector === '#candidate-observations') return this.candidateObservations;
+      if (selector === '.candidate-evidence-viewer') return this.innerHTML.includes('class="candidate-evidence-viewer"') ? {} : null;
       if (selector === '.form-error') return this.error;
       if (selector === '.record-photo-viewer') return this.innerHTML.includes('class="record-photo-viewer"') ? {} : null;
       if (selector === '#draft-save') return this.saveStatus;
@@ -86,6 +90,7 @@ export function harness({ pathname = '/admin' } = {}) {
     listDrafts: async () => [], saveDraft: async draft => { draft.revision = (draft.revision || 0) + 1; },
     parseObservationInput, observationImportSummary, parseParcelGeometry, parcelGeometrySummary,
     recordPhotoStrip, recordPhotoViewer, bindRecordPhotoEvents, retryRecordPhoto, zoomRecordPhoto,
+    recordCandidate, candidateSnapshot, candidateObservations,
     post: async () => ({}), DraftConflictError, ApiError, crypto, structuredClone, URL, Date, Error, SyntaxError, Promise,
     setTimeout() {}, HTMLButtonElement: Button,
     FormData: class { constructor(form) { this.form = form; } get(key) { return this.form.values[key]; } },
