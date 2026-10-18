@@ -5,7 +5,13 @@ export const kinds: Record<string, string> = { sowing: '播种', fertilizing: '�
 export const sources: Record<string, string> = { sentinel2: 'Sentinel-2 光学', sentinel1: 'Sentinel-1 雷达', weather: '气象记录', manual: '人工录入' };
 export const statuses: Record<string, string> = { missing: '待接入数据', stale: '数据已过期', available: '有可用观测', quality_limited: '质量受限', insufficient_data: '数据不足', not_flagged: '本次未触发候选', candidate: '发现待核查候选' };
 export function esc(value: unknown): string { return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!)); }
-export function fmtDate(value?: string) { if (!value) return '暂无'; const date = new Date(value); return Number.isNaN(date.valueOf()) ? '日期无效' : new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', year: 'numeric' }).format(date); }
+export function fmtDate(value?: string) {
+  if(!value)return '暂无';
+  const date=new Date(value),calendarDate=/^\d{4}-\d{2}-\d{2}$/.test(value);
+  if(Number.isNaN(date.valueOf())||(calendarDate&&date.toISOString().slice(0,10)!==value))return '日期无效';
+  // A plan/farm/sowing date is a calendar day, not midnight UTC in the device zone.
+  return new Intl.DateTimeFormat('zh-CN',{month:'2-digit',day:'2-digit',year:'numeric',...(calendarDate?{timeZone:'UTC'}:{})}).format(date);
+}
 export function fmtTime(value?: string) { if (!value) return '暂无'; const date = new Date(value); return Number.isNaN(date.valueOf()) ? '时间无效' : new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date); }
 export function today() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 export function localInput(iso: string) { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
