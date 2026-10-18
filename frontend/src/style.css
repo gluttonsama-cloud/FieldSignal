@@ -13,3 +13,5 @@
 .observation-selection{padding:14px;border:1px solid #dce4d0;border-radius:8px;margin:12px 0 18px;overflow-wrap:anywhere}.observation-selection[hidden]{display:none}.observation-selection label{margin-bottom:8px}
 
 .field-actions{display:grid;gap:10px}.visit-card .visit-origin{font-size:11px;color:#657954}
+
+.geometry-preview:empty{display:none}.geometry-preview{background:#f0f4e7;border:1px solid #dce4d0;border-radius:8px;margin:12px 0}.geometry-preview .boundary-svg{height:180px;min-height:0}

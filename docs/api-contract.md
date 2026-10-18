@@ -43,9 +43,11 @@ POST `/parcels`、POST `/parcels/{id}/events` 与 POST `/visits` 支持可选 `I
 
 ## UI
 
-- `/` or `/admin`: management page, region/parcel selection, local boundary map (no external tiles), provenance + quality + history, analysis action, candidate → create visit, routine manual visit entry, verification list, parcel create (paste GeoJSON supported), observation JSON input (developer/import workflow).
+- `/` or `/admin`: management page, region/parcel selection, local boundary map (no external tiles), provenance + quality + history, analysis action, candidate → create visit, routine manual visit entry, verification list, parcel create (paste/local GeoJSON file, one-boundary preview), observation JSON input (developer/import workflow).
 - `/field`: distinct phone-first workflow, pending visit priorities, parcel summary/trend, routine manual visit entry, camera/gallery attachment + observed label + note form, farm event form. Routine and candidate-linked visits show distinct source labels; forms retain the chosen parcel and show its season. Bottom navigation: 巡田 / 地块 / 记录. Browser-based mobile prototype, not yet a native app, offline sync or notifications.
 - Always show no observations as `待接入数据`; expired as `数据已过期`; synthetic as `开发模拟数据`. User field locations/photos stay local. No external map or telemetry calls.
+
+Parcel files accept Polygon, Feature or a FeatureCollection with exactly one Polygon Feature, up to 1 MiB. Coordinates are not repaired or transformed; holes, Z positions and CRS declarations are rejected. Feature properties do not prefill other fields; optional bbox is ignored and preview bounds come from coordinates. Only explicit Save sends the boundary to the local service, which still validates topology and area.
 
 Boundary source defaults to user_provided; user_survey/public_dataset describe the submitted provenance rather than verified ownership. Synthetic fixtures override the source to synthetic_fixture. Area is a local estimate, not a surveying result. Observation ingestion time is separate from acquisition time. Temporal support defaults to instantaneous; daily UTC/local-solar/Beijing intervals must remain distinguishable.
 

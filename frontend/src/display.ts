@@ -12,7 +12,7 @@ export function localInput(iso: string) { const d = new Date(iso); return `${d.g
 export function fixture(parcel?: Pick<Parcel, 'data_origin'>) { return parcel?.data_origin === 'fixture' ? '<span class="badge fixture">开发模拟数据</span>' : ''; }
 export function badge(status?: string) { return `<span class="badge ${esc(status || 'missing')}">${esc(statuses[status || 'missing'] || status)}</span>`; }
 export function empty(title: string, detail: string, action = '') { return `<div class="empty"><div class="empty-icon" aria-hidden="true">⌁</div><strong>${esc(title)}</strong><p>${esc(detail)}</p>${action}</div>`; }
-export function boundaryMap(parcels: Parcel[], selected?: string) {
+export function boundaryMap(parcels: Pick<Parcel, 'id' | 'name' | 'geometry'>[], selected?: string) {
   const usable = parcels.filter(p => p.geometry?.coordinates?.[0]?.length > 3);
   if (!usable.length) return `<div class="map-empty">${empty('还没有地块边界', '录入地块后，边界将在这里显示。')}</div>`;
   const points = usable.flatMap(p => p.geometry.coordinates[0]);

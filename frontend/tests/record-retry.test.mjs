@@ -170,14 +170,16 @@ test('parcel: equivalent JSON key order, whitespace, and Feature wrapper retain 
   await ui.submit(form);
   form.values.geometry = JSON.stringify({ type: 'Feature', properties: { ignored: 'not sent' }, geometry: polygon }, null, 2);
   await ui.submit(form);
-  assert.equal(calls.length, 3);
+  form.values.geometry = JSON.stringify({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: { name: 'ignored' }, geometry: { ...polygon, bbox: [0,0,1,1] } }] });
+  await ui.submit(form);
+  assert.equal(calls.length, 4);
   calls.forEach(call => assert.equal(key(call), key(calls[0])));
   calls.forEach(call => assert.deepEqual(JSON.parse(call.body), JSON.parse(calls[0].body)));
   const changed = structuredClone(polygon);
   changed.coordinates[0][1][0] = 112.02;
   form.values.geometry = JSON.stringify(changed);
   await ui.submit(form);
-  assert.notEqual(key(calls[3]), key(calls[0]));
+  assert.notEqual(key(calls[4]), key(calls[0]));
 });
 
 test('event: request keys bind the exact target path, while selection changes keep the opened target', async t => {
