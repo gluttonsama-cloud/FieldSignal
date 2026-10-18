@@ -1,0 +1,370 @@
+{
+  "schema_version": "fieldsignal.public-source-smoke/1",
+  "verified_at_utc": "2026-10-15T01:53:53.874153+00:00",
+  "purpose": "Public AOI pipeline smoke only; no confirmed farm, oilseed-rape label, anomaly, field diagnosis, or accuracy claim.",
+  "region": "Public demonstration AOI near Shayang, Hubei; not user private location",
+  "search_bbox_wgs84": [
+    112.35,
+    30.65,
+    112.45,
+    30.75
+  ],
+  "sample_center_wgs84": [
+    112.4,
+    30.7
+  ],
+  "mainland_china_connectivity": "Not tested. Successful reads from assistant cloud do not establish access, latency or reliability on a mainland deployment.",
+  "optical": {
+    "provider": "Element 84 Earth Search / AWS",
+    "catalog_endpoint": "https://earth-search.aws.element84.com/v1",
+    "collection": "sentinel-2-c1-l2a",
+    "catalog_status": "verified_200",
+    "asset_status": "verified_206_and_decoded_small_windows",
+    "item_id": "S2A_T49RFP_20250428T031659_L2A",
+    "item_url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-c1-l2a/items/S2A_T49RFP_20250428T031659_L2A",
+    "acquired_at": "2025-04-28T03:19:50.740000Z",
+    "catalog_created_at": "2025-04-28T11:50:30.799Z",
+    "processing_baseline": "05.11",
+    "auth": "No account, keys, SAS or login used",
+    "requester_pays": false,
+    "license": {
+      "name": "Copernicus Sentinel Data Legal Notice (custom open terms; STAC code proprietary)",
+      "url": "https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice",
+      "summary": "Free use, adaptation and redistribution subject to law, source attribution and no warranty. Do not substitute a guessed CC license.",
+      "raw_attribution": "Copernicus Sentinel data 2025",
+      "derived_attribution": "Contains modified Copernicus Sentinel data 2025",
+      "host_attribution": "Sentinel-2 Cloud-Optimized GeoTIFFs, accessed 2026-10-15 via Element 84 Earth Search / AWS Open Data."
+    },
+    "raster_verification": {
+      "read_at_utc": "2026-10-15T01:51:01.113951+00:00",
+      "demonstration_only": true,
+      "not_a_known_oilseed_rape_field": true,
+      "item_id": "S2A_T49RFP_20250428T031659_L2A",
+      "acquired_at": "2025-04-28T03:19:50.740000Z",
+      "scene_cloud_cover_pct": 3.250686,
+      "center_wgs84": [
+        112.4,
+        30.7
+      ],
+      "window_bounds_epsg32649": [
+        633900,
+        3397020,
+        634220,
+        3397340
+      ],
+      "assets": {
+        "red": {
+          "asset_href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/sentinel-2-c1-l2a/49/R/FP/2025/4/S2A_T49RFP_20250428T031659_L2A/B04.tif",
+          "http_range_probe": {
+            "status": 206,
+            "content_range": "bytes 0-16383/239994844",
+            "bytes_read": 16384,
+            "header_sha256": "336b3c40d8ef309a52e5c5bf8a3237c63a64c2afabf754efc678a6f53f563792",
+            "magic_hex": "49492a00"
+          },
+          "gdal_size": [
+            10980,
+            10980
+          ],
+          "gdal_crs": "32649",
+          "gdal_geotransform": [
+            600000.0,
+            10.0,
+            0.0,
+            3400020.0,
+            0.0,
+            -10.0
+          ],
+          "gdal_dtype": "UInt16",
+          "gdal_nodata": 0.0,
+          "gdal_scale": 0.0001,
+          "gdal_offset": -0.1,
+          "stac_raster_band": {
+            "nodata": 0,
+            "data_type": "uint16",
+            "spatial_resolution": 10,
+            "scale": 0.0001,
+            "offset": -0.1
+          },
+          "pixel_window": [
+            3390,
+            268,
+            32,
+            32
+          ],
+          "raw_min": 1046.0,
+          "raw_max": 3499.0,
+          "unique_class_counts": null,
+          "local_sample_sha256": "a6c51ee8d230dcd4751414464f661e0addb8c790b7cbb8a92180e6a8a7e073e9"
+        },
+        "nir": {
+          "asset_href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/sentinel-2-c1-l2a/49/R/FP/2025/4/S2A_T49RFP_20250428T031659_L2A/B08.tif",
+          "http_range_probe": {
+            "status": 206,
+            "content_range": "bytes 0-16383/257935729",
+            "bytes_read": 16384,
+            "header_sha256": "1d143d57557738254cb957b4d6bc31ee8922ffb5f1a3334fab96cf813022bde2",
+            "magic_hex": "49492a00"
+          },
+          "gdal_size": [
+            10980,
+            10980
+          ],
+          "gdal_crs": "32649",
+          "gdal_geotransform": [
+            600000.0,
+            10.0,
+            0.0,
+            3400020.0,
+            0.0,
+            -10.0
+          ],
+          "gdal_dtype": "UInt16",
+          "gdal_nodata": 0.0,
+          "gdal_scale": 0.0001,
+          "gdal_offset": -0.1,
+          "stac_raster_band": {
+            "nodata": 0,
+            "data_type": "uint16",
+            "spatial_resolution": 10,
+            "scale": 0.0001,
+            "offset": -0.1
+          },
+          "pixel_window": [
+            3390,
+            268,
+            32,
+            32
+          ],
+          "raw_min": 1193.0,
+          "raw_max": 6020.0,
+          "unique_class_counts": null,
+          "local_sample_sha256": "a5e402863dec1103be6801b0979f47ca0bb78c810d2ba2d7e3033ba09f1e0f29"
+        },
+        "scl": {
+          "asset_href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/sentinel-2-c1-l2a/49/R/FP/2025/4/S2A_T49RFP_20250428T031659_L2A/SCL.tif",
+          "http_range_probe": {
+            "status": 206,
+            "content_range": "bytes 0-16383/6082156",
+            "bytes_read": 16384,
+            "header_sha256": "ad990d5348bcaecc3dc1b5ec3dc7dee84ba5d6b27c6ef02e87d2c62348a063f2",
+            "magic_hex": "49492a00"
+          },
+          "gdal_size": [
+            5490,
+            5490
+          ],
+          "gdal_crs": "32649",
+          "gdal_geotransform": [
+            600000.0,
+            20.0,
+            0.0,
+            3400020.0,
+            0.0,
+            -20.0
+          ],
+          "gdal_dtype": "Byte",
+          "gdal_nodata": 0.0,
+          "gdal_scale": null,
+          "gdal_offset": null,
+          "stac_raster_band": {
+            "nodata": 0,
+            "data_type": "uint8",
+            "spatial_resolution": 20
+          },
+          "pixel_window": [
+            1695,
+            134,
+            16,
+            16
+          ],
+          "raw_min": 4.0,
+          "raw_max": 7.0,
+          "unique_class_counts": {
+            "4": 56,
+            "5": 197,
+            "7": 3
+          },
+          "local_sample_sha256": "d5c09ee29a0f42486b304367aa7c49d47c934a7ef4a3c6d01ed0cb6cba1c7851"
+        }
+      },
+      "smoke_metric": {
+        "rule": "SCL 4/5 only, raw nodata removed, nonnegative reflectance, finite positive denominator; no crop truth",
+        "total_10m_pixels": 1024,
+        "valid_10m_pixels": 1012,
+        "valid_fraction": 0.98828125,
+        "median_ndvi": 0.37450793780333835,
+        "warning": "One public 320m square and one date verifies plumbing only; no oilseed-rape label, anomaly, yield, disease, or accuracy inference."
+      }
+    },
+    "network_range_body_bytes": 3522560,
+    "network_bytes_note": "Sum of logged GDAL byte ranges plus three 16KiB explicit probes; excludes headers/catalog JSON; full scene not fetched.",
+    "limitations": [
+      "A tile cloud percentage is not pixel/field valid coverage.",
+      "Native B04/B08 are 10m; SCL is 20m. Nearest-neighbor SCL resampling does not add spatial information.",
+      "Smoke valid fraction is for an arbitrary 320m square, with classes 4/5 only and nodata/negative/denominator guards. It is not a crop classifier.",
+      "One date cannot establish temporal anomaly detection; production requires field polygons, crop/season context and valid multi-date observations.",
+      "Provider public API is best-effort with no guaranteed SLA."
+    ]
+  },
+  "weather": {
+    "provider": "NASA POWER",
+    "endpoint": "https://power.larc.nasa.gov/api/temporal/daily/point",
+    "access_status": "verified_200_full_small_json",
+    "request_url": "https://power.larc.nasa.gov/api/temporal/daily/point?parameters=T2M_MIN%2CT2M_MAX%2CPRECTOTCORR&community=AG&longitude=112.4&latitude=30.7&start=20250426&end=20250428&format=JSON&time-standard=UTC",
+    "response_bytes": 798,
+    "auth": "No login or API key",
+    "source_models": [
+      "MERRA2",
+      "POWER"
+    ],
+    "api_version": "v2.10.0",
+    "spatial_resolution_degrees": {
+      "latitude": 0.5,
+      "longitude": 0.625
+    },
+    "representation": "Grid-average model/reanalysis, not a local weather station",
+    "time_standard": "UTC",
+    "period_start": "2025-04-26",
+    "period_end": "2025-04-28",
+    "time_warning": "Daily UTC intervals differ from Asia/Shanghai civil days; do not relabel LST or UTC daily min/max as Beijing-time days.",
+    "fill_value": -999.0,
+    "parameters": {
+      "T2M_MIN": {
+        "units": "C",
+        "longname": "Temperature at 2 Meters Minimum"
+      },
+      "T2M_MAX": {
+        "units": "C",
+        "longname": "Temperature at 2 Meters Maximum"
+      },
+      "PRECTOTCORR": {
+        "units": "mm/day",
+        "longname": "Precipitation Corrected"
+      }
+    },
+    "values": {
+      "T2M_MIN": {
+        "20250426": 16.83,
+        "20250427": 17.94,
+        "20250428": 17.15
+      },
+      "T2M_MAX": {
+        "20250426": 28.06,
+        "20250427": 30.0,
+        "20250428": 30.6
+      },
+      "PRECTOTCORR": {
+        "20250426": 0.0,
+        "20250427": 0.06,
+        "20250428": 0.02
+      }
+    },
+    "official_latency": "Meteorological archive generally 2–3 days; recent GEOS-IT values may later be replaced by MERRA-2. Not a forecast.",
+    "license": {
+      "name": "NASA POWER open data / provider-linked CC BY 4.0",
+      "url": "https://registry.opendata.aws/nasa-power/",
+      "summary": "NASA-maintained registry states no restrictions on use/access/download and links CC BY 4.0; preserve NASA POWER and source attribution.",
+      "attribution": "NASA POWER Project, NASA Langley Research Center; source MERRA-2; retrieved 2026-10-15."
+    },
+    "limitations": [
+      "Historical agroclimatic context only for V0.",
+      "Cannot diagnose field waterlogging, frost damage, disease or crop condition from a coarse grid.",
+      "Store missing -999 as null; preserve physical units.",
+      "Do not treat 2–3 day retrospective availability as timely official hazard warning."
+    ]
+  },
+  "sar": {
+    "implementation_status": "not_connected",
+    "cdse": {
+      "catalog_status": 200,
+      "asset_status": 401,
+      "asset_error": "Token not found",
+      "license": "Copernicus Sentinel Data Legal Notice",
+      "evidence": "cdse_s1_unsigned_range_request.json"
+    },
+    "planetary_computer": {
+      "catalog_status": 200,
+      "asset_status": 409,
+      "asset_error": "PublicAccessNotPermitted",
+      "collection_requires_account": true,
+      "license": "CC-BY-4.0",
+      "collection_url": "https://planetarycomputer.microsoft.com/api/stac/v1/collections/sentinel-1-rtc",
+      "evidence": "pc_s1_unsigned_range_request.json"
+    },
+    "earthsearch": {
+      "catalog_status": 200,
+      "assets_status": "not_read_requester_pays",
+      "requester_pays": true,
+      "product": "GRD amplitude, not already RTC gamma0",
+      "evidence": "earthsearch_s1_search.json"
+    },
+    "sample_metadata": {
+      "item_id": "S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_rtc",
+      "acquired_at": "2025-03-13T10:28:11.580415Z",
+      "polarizations": [
+        "VV",
+        "VH"
+      ],
+      "orbit_state": "ascending",
+      "relative_orbit": 113,
+      "rtc_crs": "EPSG:32649",
+      "pixel_spacing_m": 10,
+      "underlying_resolution_m": [
+        20,
+        22
+      ]
+    },
+    "no_bypass": "No registration, authentication, token creation, login, paid download or full scenes attempted."
+  },
+  "domestic_alternatives": {
+    "gscloud": {
+      "status": "catalog_pages_verified_not_asset_access",
+      "sentinel_index": "https://www.gscloud.cn/sources/index?pid=446&ptitle=Sentinel%E6%95%B0%E6%8D%AE&rootid=1",
+      "copyright_url": "https://www.gscloud.cn/help/detail/uses/160",
+      "restriction": "Site explicitly prohibits transfer/redistribution of obtained data without permission. Login, area/date completeness, APIs, entity caching, updates and product-specific downstream rights remain unverified.",
+      "gf1": "Official catalogue distinguishes 16m WFV and 2m/8m PMS; some PMS listings have zero files. Do not claim GF-1 is a verified production source."
+    },
+    "cma_cldas": {
+      "status": "official_metadata_verified_registration_required_assets_unread",
+      "url": "https://k.data.cma.cn/mekb/?dataCode=NAFP_CLDAS2.0_NRT&r=data/detail",
+      "resolution_degrees": 0.0625,
+      "temporal_resolution_hours": 1,
+      "latency_days": 2,
+      "access": "Ordinary registered users, as stated on this specific dataset page; other CMA products use different account tiers.",
+      "license_status": "Product redistribution/commercial terms not verified; do not presume platform access grants product redistribution."
+    }
+  },
+  "source_links": {
+    "earthsearch_terms": "https://github.com/Element84/earth-search",
+    "s2_scale_offset": "https://github.com/Element84/earth-search/blob/main/docs/collections/sentinel-2-l2a.md",
+    "s2_scl": "https://sentiwiki.copernicus.eu/web/s2-processing",
+    "s2_products": "https://sentiwiki.copernicus.eu/web/s2-products",
+    "s2_revisit": "https://sentiwiki.copernicus.eu/web/s2-mission",
+    "power_daily": "https://power.larc.nasa.gov/docs/services/api/temporal/daily/",
+    "power_source_resolution": "https://power.larc.nasa.gov/docs/methodology/data/sources/",
+    "power_latency": "https://power.larc.nasa.gov/docs/faqs/data/",
+    "cdse_catalog": "https://documentation.dataspace.copernicus.eu/APIs/STAC.html",
+    "cdse_auth": "https://documentation.dataspace.copernicus.eu/notebook-samples/sentinelhub/getting_started/migration_from_scihub_guide.html",
+    "aws_s1_requester_pays": "https://roda.sentinel-hub.com/sentinel-s1-l1c/GRD/readme.html"
+  },
+  "historical_crop_prior": {
+    "name": "CARM30 v1",
+    "paper_url": "https://www.nature.com/articles/s41597-024-03188-1",
+    "dataset_url": "https://data.mendeley.com/datasets/hxhkphgmtt/1",
+    "data_license": "CC-BY-4.0",
+    "classification_codes": {
+      "0": "non-rapeseed",
+      "1": "rapeseed"
+    },
+    "years": [
+      2000,
+      2022
+    ],
+    "resolution_m": 30,
+    "stated_crs": "WGS 1984 UTM Zone 48N",
+    "asset_access": "not_tested",
+    "role": "Historical candidate-area prior only; not current crop truth, user fields, or anomaly labels.",
+    "note_file": "CARM30_CANDIDATE_ONLY.md"
+  }
+}

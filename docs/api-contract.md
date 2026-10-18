@@ -1,0 +1,50 @@
+# FieldSignal V0 interface contract
+
+All paths begin `/api/v1`; JSON uses snake_case. API errors return `{error: {code, message, details}}`. All datetimes are ISO 8601 with timezone, normalized to UTC. Growing-season date membership uses Asia/Shanghai civil dates (July 1 to the following June 30); farm-event dates use the same agronomic calendar. Local prototype only, bound to 127.0.0.1. No account system or remote deployment is included. Data is empty by default.
+
+## Entities
+
+- Parcel: `id, name, region, crop, season, sowing_date?, cultivar?, geometry, area_ha, area_method, boundary_source, boundary_reference?, boundary_crs, data_origin, created_at`. `region`: `shayang|luotian|other`; `crop`: `oilseed_rape`. `geometry`: GeoJSON Polygon WGS84 closed ring (no holes in V0). `data_origin`: `user|fixture`; fixture parcels cannot accept actual observations.
+- Observation: `id, parcel_id, observed_at, source, source_record_id, features, quality, provenance, data_origin, observed_at, ingested_at, created_at`. `source`: `sentinel2|sentinel1|weather|manual`. Features support `ndvi, ndre, evi, ndwi, vv_db, vh_db, temperature_min_c, temperature_max_c, precipitation_mm`. Quality: `usable, valid_fraction, cloud_fraction?, flags: string[]`. Provenance: `provider, collection, item_id, processing_version, license?, source_uri?, spatial_resolution_m?, temporal_support, support_note?`. Local pre-cropped S2 TIFF/STAC and POWER JSON normalization is now supported by a separate reusable adapter; there is no automatic download or general raster-upload endpoint.
+- AnalysisRun: `id, parcel_id, method, evaluated_at, status, risk_id?, observation_count, message`. Status: `insufficient_data|stale|not_flagged|candidate`. `not_flagged` is not a healthy diagnosis.
+- RiskCandidate: `id, parcel_id, observation_id, method, status, priority, summary, evidence, model_version, created_at`. Status: `open|assigned|verified`; priority: `high|medium`; evidence includes actual source observation IDs, `metric, latest_value, baseline_median, baseline_mad, absolute_drop, score, baseline_count, limitations`.
+- Visit: `id, parcel_id, risk_id?, status, due_date, assignee?, note?, created_at`. Status: `pending|completed`; only verification completes it.
+- Verification: `id, visit_id, parcel_id, observed_at, label, note, photo_ids, created_at`. Label: `normal|waterlogging|frost|disease_suspected|other|uncertain`. Labels are user reports, never confirmed diagnosis. Photo IDs must reference photos stored locally for this same visit. A photo is optional but absence must be visible.
+- FarmEvent: `id, parcel_id, occurred_on, kind, note, created_at`. Kind: `sowing|fertilizing|spraying|drainage|other`.
+
+## API
+
+- GET `/health` → `{status, version, storage, demo_enabled}`
+- GET `/dashboard` → `{parcel_count, open_risk_count, pending_visit_count, verification_count, parcels: [{...Parcel, latest_observed_at, observation_count, data_status, open_risk_count}], recent_verifications}`. data_status: `missing|stale|available|quality_limited`. Does not equate available to healthy.
+- GET `/parcels` → Parcel[]
+- POST `/parcels` body `{name, region, season, geometry, sowing_date?, cultivar?}` → Parcel
+- GET `/parcels/{id}` → Parcel
+- GET `/parcels/{id}/observations` → Observation[] sorted oldest first
+- POST `/parcels/{id}/observations` body Observation without id/parcel_id/created_at/data_origin → Observation
+- POST `/parcels/{id}/analyses` body `{method?: "statistical"|"isolation_forest"}` → AnalysisRun. Evaluates latest eligible observation; stale or low-quality data never becomes a new alert.
+- GET `/parcels/{id}/analyses` → AnalysisRun[]
+- GET `/risks` → RiskCandidate[]
+- POST `/visits` body `{parcel_id, risk_id?, due_date, assignee?, note?}` → Visit (risk parcel must match; duplicate active visit returns 409)
+- GET `/visits` → Visit[]
+- POST `/visits/{id}/photos` raw `image/jpeg|image/png|image/webp`, max 10 MB → `{id, visit_id, content_type, size_bytes, created_at}`. No outbound transfer; strips metadata by decoding/re-encoding.
+- DELETE `/visits/{visit_id}/photos/{photo_id}` → 204, idempotently removes a same-visit staged photo while the visit is pending. Completed evidence is immutable through this route. Offline clients persist a delete queue and drain it before replacement uploads.
+- GET `/photos/{id}` → local image bytes
+- POST `/visits/{id}/verifications` body `{observed_at, label, note, photo_ids?: [], client_submission_id?}` → Verification and atomically completes visit / resolves linked candidate. Same client_submission_id + identical content replays the original success; conflicting reuse or a different completion returns 409.
+- GET `/verifications` → Verification[]
+- POST `/parcels/{id}/events` body `{occurred_on, kind, note}` → FarmEvent
+- GET `/parcels/{id}/events` → FarmEvent[]
+- POST `/dev/fixtures` → `{created: bool, parcel_id}` only if `FIELDSIGNAL_ENABLE_FIXTURES=1`. Inserts one conspicuously named synthetic parcel + simulated optical history. No fake true labels. Does not overwrite real data.
+
+## UI
+
+- `/` or `/admin`: management page, region/parcel selection, local boundary map (no external tiles), provenance + quality + history, analysis action, candidate → create visit, verification list, parcel create (paste GeoJSON supported), observation JSON input (developer/import workflow).
+- `/field`: distinct phone-first workflow, pending visit priorities, parcel summary/trend, camera/gallery attachment + observed label + note form, farm event form. Bottom navigation: 巡田 / 地块 / 记录. Browser-based mobile prototype, not yet a native app, offline sync or notifications.
+- Always show no observations as `待接入数据`; expired as `数据已过期`; synthetic as `开发模拟数据`. User field locations/photos stay local. No external map or telemetry calls.
+
+Boundary source defaults to user_provided; user_survey/public_dataset describe the submitted provenance rather than verified ownership. Synthetic fixtures override the source to synthetic_fixture. Area is a local estimate, not a surveying result. Observation ingestion time is separate from acquisition time. Temporal support defaults to instantaneous; daily UTC/local-solar/Beijing intervals must remain distinguishable.
+
+Photo lifecycle: upload creates staged bytes; successful verification atomically confirms only selected photo IDs and removes other staged uploads for that visit. Client drafts remain until the acknowledged submission version is safely cleared. Verification date must fall in the parcel season and, for a linked candidate, be no earlier than the triggering observation. Historic seasons and later-entered genuine historic records remain supported.
+
+## 2026-10-16 local-source extension
+
+See [local observation import contract](local-observation-import.md) for provenance fields, the manifest schema, generic CLI, public-sample API and isolation. GET `/sources` is read-only; POST `/source-imports/public-sample` explicitly imports a bundled public sample without any parcel ID. Existing field observation imports reject public-sample scope and enforce declared parcel geometry hashes when usage_scope=parcel. Old provenance remains valid with usage_scope=unverified. Source_imports are separate from all farm tables and retain immutable input/processing/time evidence.

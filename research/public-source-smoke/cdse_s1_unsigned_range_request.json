@@ -1,0 +1,6 @@
+{
+  "requested_at_utc": "2026-10-15T01:49:47.551924+00:00",
+  "request_url": "https://download.dataspace.copernicus.eu/odata/v1/Products(094c1940-7b44-48cb-b8f1-b7cd0482375d)/Nodes(S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_D170_COG.SAFE)/Nodes(measurement)/Nodes(s1a-iw-grd-vv-20250313t102759-20250313t102824-058285-073449-001-cog.tiff)/$value",
+  "status": 401,
+  "error_body": "{\"trace-id\":\"eccf3e2e7db718e424ab7ae4443b3ad7\",\"code\":\"DAT-ZIP-604\",\"message\":\"Token not found\"}"
+}

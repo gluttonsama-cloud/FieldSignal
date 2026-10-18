@@ -1,0 +1,183 @@
+{
+  "requested_at_utc": "2026-10-15T01:48:33.738424+00:00",
+  "request_url": "https://stac.dataspace.copernicus.eu/v1/search?collections=sentinel-1-grd&bbox=112.35%2C30.65%2C112.45%2C30.75&datetime=2025-03-01T00%3A00%3A00Z%2F2025-03-15T23%3A59%3A59Z&limit=1",
+  "status": 200,
+  "bytes": 17401,
+  "content_type": "application/geo+json",
+  "elapsed_seconds": 7.06,
+  "items": [
+    {
+      "id": "S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_D170_COG",
+      "properties": {
+        "created": "2025-03-13T12:28:10.862777Z",
+        "expires": "2262-01-01T00:00:00.000000Z",
+        "updated": "2026-09-07T08:01:03.828938Z",
+        "_private": {
+          "visible": true,
+          "product_name": "S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_D170_COG.SAFE",
+          "product_size": 1253924578,
+          "product_uuid": "094c1940-7b44-48cb-b8f1-b7cd0482375d"
+        },
+        "datetime": "2025-03-13T10:27:59.081303Z",
+        "platform": "sentinel-1a",
+        "published": "2025-03-13T13:31:45.593545Z",
+        "instruments": [
+          "sar"
+        ],
+        "auth:schemes": {
+          "s3": {
+            "type": "s3"
+          },
+          "oidc": {
+            "type": "openIdConnect",
+            "openIdConnectUrl": "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/.well-known/openid-configuration"
+          }
+        },
+        "end_datetime": "2025-03-13T10:28:24.079526Z",
+        "product:type": "IW_GRDH_1S",
+        "view:azimuth": 347.2905219378321,
+        "constellation": "sentinel-1",
+        "start_datetime": "2025-03-13T10:27:59.081303Z",
+        "sat:orbit_cycle": 347,
+        "sat:orbit_state": "ascending",
+        "storage:schemes": {
+          "cdse-s3": {
+            "type": "custom-s3",
+            "class": "hot",
+            "title": "Copernicus Data Space Ecosystem S3",
+            "platform": "https://eodata.dataspace.copernicus.eu",
+            "description": "This endpoint provides access to EO data which is stored on the object storage of both CloudFerro Cloud and OpenTelekom Cloud (OTC). See the [documentation](https://documentation.dataspace.copernicus.eu/APIs/S3.html) for more information, including how to get credentials.",
+            "requester_pays": false
+          },
+          "creodias-s3": {
+            "type": "custom-s3",
+            "class": "hot",
+            "title": "CREODIAS S3",
+            "platform": "https://eodata.cloudferro.com",
+            "description": "Comprehensive Earth Observation Data (EODATA) archive offered by CREODIAS as a commercial part of CDSE, designed to provide users with access to a vast repository of satellite data without predefined quota limits.",
+            "requester_pays": true
+          }
+        },
+        "eopf:datatake_id": "472137",
+        "processing:level": "L1",
+        "sar:polarizations": [
+          "VV",
+          "VH"
+        ],
+        "processing:version": "01.00",
+        "product:timeliness": "PT24H",
+        "sar:frequency_band": "C",
+        "sat:absolute_orbit": 58285,
+        "sat:relative_orbit": 113,
+        "processing:datetime": "2025-03-13T13:28:52.442139Z",
+        "processing:facility": "Copernicus Data Space Ecosystem-CloudFerro",
+        "processing:software": {
+          "eometadatatool": "0"
+        },
+        "sar:instrument_mode": "IW",
+        "eopf:origin_datetime": "2025-03-13T12:28:10.862777Z",
+        "sar:center_frequency": 5.405,
+        "view:incidence_angle": 39.02148792567562,
+        "sar:pixel_spacing_range": 10.0,
+        "sar:observation_direction": "right",
+        "sar:pixel_spacing_azimuth": 10.0,
+        "product:timeliness_category": "Fast-24h",
+        "eopf:instrument_configuration_id": 7,
+        "sat:platform_international_designator": "2014-016A"
+      },
+      "assets": {
+        "vh": {
+          "href": "s3://eodata/Sentinel-1/SAR/IW_GRDH_1S-COG/2025/03/13/S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_D170_COG.SAFE/measurement/s1a-iw-grd-vh-20250313t102759-20250313t102824-058285-073449-002-cog.tiff",
+          "roles": [
+            "data"
+          ],
+          "proj:shape": [
+            25686,
+            16722
+          ],
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized"
+        },
+        "vv": {
+          "href": "s3://eodata/Sentinel-1/SAR/IW_GRDH_1S-COG/2025/03/13/S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_D170_COG.SAFE/measurement/s1a-iw-grd-vv-20250313t102759-20250313t102824-058285-073449-001-cog.tiff",
+          "roles": [
+            "data"
+          ],
+          "proj:shape": [
+            25686,
+            16722
+          ],
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized"
+        },
+        "Product": {
+          "href": "https://download.dataspace.copernicus.eu/odata/v1/Products(094c1940-7b44-48cb-b8f1-b7cd0482375d)/$value",
+          "roles": [
+            "data",
+            "metadata",
+            "archive"
+          ],
+          "type": "application/zip"
+        },
+        "thumbnail": {
+          "href": "https://datahub.creodias.eu/odata/v1/Assets(30798d92-4467-4bfc-a6ff-39c2d7995c35)/$value",
+          "proj:shape": [
+            343,
+            343
+          ],
+          "type": "image/png",
+          "roles": [
+            "thumbnail"
+          ]
+        },
+        "safe_manifest": {
+          "href": "s3://eodata/Sentinel-1/SAR/IW_GRDH_1S-COG/2025/03/13/S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_D170_COG.SAFE/manifest.safe",
+          "roles": [
+            "metadata"
+          ],
+          "type": "application/xml"
+        },
+        "schema-noise-vh": {
+          "href": "s3://eodata/Sentinel-1/SAR/IW_GRDH_1S-COG/2025/03/13/S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_D170_COG.SAFE/annotation/calibration/noise-s1a-iw-grd-vh-20250313t102759-20250313t102824-058285-073449-002-cog.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-noise-vv": {
+          "href": "s3://eodata/Sentinel-1/SAR/IW_GRDH_1S-COG/2025/03/13/S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_D170_COG.SAFE/annotation/calibration/noise-s1a-iw-grd-vv-20250313t102759-20250313t102824-058285-073449-001-cog.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-product-vh": {
+          "href": "s3://eodata/Sentinel-1/SAR/IW_GRDH_1S-COG/2025/03/13/S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_D170_COG.SAFE/annotation/s1a-iw-grd-vh-20250313t102759-20250313t102824-058285-073449-002-cog.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-product-vv": {
+          "href": "s3://eodata/Sentinel-1/SAR/IW_GRDH_1S-COG/2025/03/13/S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_D170_COG.SAFE/annotation/s1a-iw-grd-vv-20250313t102759-20250313t102824-058285-073449-001-cog.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-calibration-vh": {
+          "href": "s3://eodata/Sentinel-1/SAR/IW_GRDH_1S-COG/2025/03/13/S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_D170_COG.SAFE/annotation/calibration/calibration-s1a-iw-grd-vh-20250313t102759-20250313t102824-058285-073449-002-cog.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-calibration-vv": {
+          "href": "s3://eodata/Sentinel-1/SAR/IW_GRDH_1S-COG/2025/03/13/S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_D170_COG.SAFE/annotation/calibration/calibration-s1a-iw-grd-vv-20250313t102759-20250313t102824-058285-073449-001-cog.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        }
+      }
+    }
+  ]
+}

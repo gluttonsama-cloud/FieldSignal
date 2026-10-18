@@ -1,0 +1,9 @@
+{
+  "replayed_at_utc": "2026-10-15T01:53:54Z",
+  "command": "/usr/bin/python3 smoke_public_sources.py --pixels",
+  "exit_code": 0,
+  "same_item": true,
+  "same_metric": true,
+  "same_sample_hashes": true,
+  "notes": "Full two-JSON + three-range-window script replayed successfully. Requires existing system GDAL and NumPy; public AOI only. No credentials or private farm geometry."
+}
