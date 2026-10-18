@@ -3,6 +3,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 import { parseParcelGeometry, parcelGeometrySummary } from '../../src/parcel-geometry.ts';
 import { parseObservationInput, observationImportSummary } from '../../src/observation-import.ts';
+import { recordPhotoStrip, recordPhotoViewer, bindRecordPhotoEvents, retryRecordPhoto, zoomRecordPhoto } from '../../src/record-photos.ts';
 import { ApiError } from '../../src/api.ts';
 import { DraftConflictError } from '../../src/drafts.ts';
 
@@ -60,6 +61,7 @@ export function harness({ pathname = '/admin' } = {}) {
     contains(element) { return element === this.form; },
     querySelector(selector) {
       if (selector === '.form-error') return this.error;
+      if (selector === '.record-photo-viewer') return this.innerHTML.includes('class="record-photo-viewer"') ? {} : null;
       if (selector === '#draft-save') return this.saveStatus;
       if (selector === '#retry-draft-save') return this.retrySave;
       if (selector === '#verification-fields') return this.fields;
@@ -81,6 +83,7 @@ export function harness({ pathname = '/admin' } = {}) {
     createSourceController: () => ({ refresh: async () => {} }),
     listDrafts: async () => [], saveDraft: async draft => { draft.revision = (draft.revision || 0) + 1; },
     parseObservationInput, observationImportSummary, parseParcelGeometry, parcelGeometrySummary,
+    recordPhotoStrip, recordPhotoViewer, bindRecordPhotoEvents, retryRecordPhoto, zoomRecordPhoto,
     post: async () => ({}), DraftConflictError, ApiError, crypto, structuredClone, URL, Date, Error, SyntaxError, Promise,
     setTimeout() {}, HTMLButtonElement: Button,
     FormData: class { constructor(form) { this.form = form; } get(key) { return this.form.values[key]; } },
