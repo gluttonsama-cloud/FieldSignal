@@ -7,7 +7,7 @@ import type { ObservationBundle } from './observation-import';
 import { parseParcelGeometry, parcelGeometrySummary } from './parcel-geometry';
 import { createSourceController, renderSources, provenanceDetails, qualityDetails, featureDetails, utcTime } from './sources';
 import { DraftConflictError, listDrafts, saveDraft, removeDraft } from './drafts';
-import { uploadVerificationDraft } from './sync';
+import { uploadVerificationDraft, verificationNoteError } from './sync';
 import { regions, labels, kinds, sources, statuses, esc, shortParcelId, fmtDate, fmtTime, today, localInput, fixture, badge, empty, boundaryMap, trend, usable } from './display';
 import type { Parcel, Observation, Analysis, Risk, Visit, Verification, FarmEvent, Dashboard, Health, VerificationDraft } from './types';
 
@@ -426,6 +426,7 @@ async function flushDraft() {
 }
 async function submitVerification() {
   if(!currentDraft||submitting)return;
+  const noteError=verificationNoteError(currentDraft.note);if(noteError){formError(noteError);return;}
   const timeError=verificationTimeError(currentDraft);if(timeError){formError(timeError);return;}
   submitting=true;const d=currentDraft,session=dialogSession;let uploadStarted=false;
   const ownsDialog=()=>session===dialogSession&&currentDraft===d;

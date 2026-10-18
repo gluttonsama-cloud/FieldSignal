@@ -5,6 +5,7 @@ import { parseParcelGeometry, parcelGeometrySummary } from '../../src/parcel-geo
 import { parseObservationInput, observationImportSummary } from '../../src/observation-import.ts';
 import { recordPhotoStrip, recordPhotoViewer, bindRecordPhotoEvents, retryRecordPhoto, zoomRecordPhoto } from '../../src/record-photos.ts';
 import { shortParcelId } from '../../src/display.ts';
+import { verificationNoteError } from '../../src/sync.ts';
 import { ApiError } from '../../src/api.ts';
 import { DraftConflictError } from '../../src/drafts.ts';
 
@@ -88,7 +89,7 @@ export function harness({ pathname = '/admin' } = {}) {
     post: async () => ({}), DraftConflictError, ApiError, crypto, structuredClone, URL, Date, Error, SyntaxError, Promise,
     setTimeout() {}, HTMLButtonElement: Button,
     FormData: class { constructor(form) { this.form = form; } get(key) { return this.form.values[key]; } },
-    shortParcelId, regions: {}, kinds: {}, labels: {}, today: () => '2026-10-18',
+    verificationNoteError, shortParcelId, regions: {}, kinds: {}, labels: {}, today: () => '2026-10-18',
     fmtTime: value => value, localInput: value => value, esc: String, fixture: () => '',
   });
   vm.runInContext(`${mainSource}\nglobalThis.realRefresh=refresh; render=()=>{}; refresh=async()=>{};

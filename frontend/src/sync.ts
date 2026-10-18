@@ -2,8 +2,13 @@ import { api, post, ApiError } from './api.ts';
 import { saveDraft, clearDraft } from './drafts.ts';
 import type { VerificationDraft, Verification } from './types.ts';
 
+export function verificationNoteError(note: string) {
+  return note.trim() ? '' : '请填写现场备注，不能只输入空格或换行。';
+}
+
 /** Explicit user-triggered upload only. Persist each acknowledged step before moving on. */
 export async function uploadVerificationDraft(draft: VerificationDraft): Promise<Verification> {
+  const noteError=verificationNoteError(draft.note);if(noteError)throw new Error(noteError);
   for (const id of [...(draft.pending_delete_photo_ids || [])]) {
     await api<void>(`/visits/${encodeURIComponent(draft.visit_id)}/photos/${encodeURIComponent(id)}`, { method: 'DELETE' });
     draft.pending_delete_photo_ids = (draft.pending_delete_photo_ids || []).filter(value => value !== id);
