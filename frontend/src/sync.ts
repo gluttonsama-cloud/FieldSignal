@@ -1,4 +1,4 @@
-import { api, post } from './api.ts';
+import { api, post, ApiError } from './api.ts';
 import { saveDraft, clearDraft } from './drafts.ts';
 import type { VerificationDraft, Verification } from './types.ts';
 
@@ -9,13 +9,23 @@ export async function uploadVerificationDraft(draft: VerificationDraft): Promise
     draft.pending_delete_photo_ids = (draft.pending_delete_photo_ids || []).filter(value => value !== id);
     await saveDraft(draft);
   }
-  for (const photo of draft.photos) {
+  for (const [index, photo] of draft.photos.entries()) {
     if (!photo.uploaded_id) {
-      const result = await api<{ id: string }>(`/visits/${encodeURIComponent(draft.visit_id)}/photos`, {
-        method: 'POST', headers: { 'Content-Type': photo.blob.type }, body: photo.blob,
-      });
-      if (!result.id) throw new Error('服务未确认照片编号，草稿已保留，请重试。');
-      photo.uploaded_id = result.id;
+      let uploadedId: string;
+      try {
+        const result = await api<{ id: string }>(`/visits/${encodeURIComponent(draft.visit_id)}/photos`, {
+          method: 'POST', headers: { 'Content-Type': photo.blob.type }, body: photo.blob,
+        });
+        if (!result?.id) throw new Error('服务未确认照片编号。');
+        uploadedId = result.id;
+      } catch (error) {
+        const advice=error instanceof ApiError&&[415,422].includes(error.status)?'请检查或更换这张照片，再手动重试。':error instanceof ApiError&&error.status<500?'请保留草稿，按提示处理后再手动重试。':'这张照片的服务端结果尚未确认，请保留草稿后手动重试。';
+        const message=`第 ${index+1}/${draft.photos.length} 张照片「${photo.name||'未命名照片'}」：${error instanceof Error?error.message:'请求未完成。'} ${advice}`;
+        if(error instanceof ApiError)throw new ApiError(error.status,message);
+        throw new Error(message);
+      }
+      photo.uploaded_id = uploadedId;
+      // Keep persistence/CAS failures distinct from photo-request failures.
       await saveDraft(draft);
     }
   }

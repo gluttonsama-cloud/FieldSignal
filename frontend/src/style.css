@@ -24,3 +24,5 @@
 .draft-item{margin-bottom:10px;border:1px solid #dfe5d8;border-radius:9px;overflow:hidden;background:#fcfdf8}.draft-item .draft-row{border:0;margin:0;border-radius:0;padding:15px 16px}.draft-remove{display:block;margin:0 16px 10px;min-height:44px;color:#98513e}.destructive{background:#8b4135;color:#fff;border-color:#8b4135}
 
 .record-export{padding:12px 20px;border-bottom:1px solid #e7ebdf}.record-export-action{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px}.record-export-action strong{font-size:12px;overflow-wrap:anywhere}.record-export button:disabled{cursor:default}
+
+.draft-photo .draft-photo-name{font-size:11px;overflow-wrap:anywhere;color:#53664b}
