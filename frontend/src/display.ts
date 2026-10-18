@@ -12,7 +12,7 @@ export function fmtDate(value?: string) {
   // A plan/farm/sowing date is a calendar day, not midnight UTC in the device zone.
   return new Intl.DateTimeFormat('zh-CN',{month:'2-digit',day:'2-digit',year:'numeric',...(calendarDate?{timeZone:'UTC'}:{})}).format(date);
 }
-export function fmtTime(value?: string) { if (!value) return '暂无'; const date = new Date(value); return Number.isNaN(date.valueOf()) ? '时间无效' : new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date); }
+export function fmtTime(value?: string, includeYear=false) { if (!value) return '暂无'; const date = new Date(value); return Number.isNaN(date.valueOf()) ? '时间无效' : new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', ...(includeYear?{year:'numeric'}:{}) }).format(date); }
 export function today() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 export function localInput(iso: string) { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
 export function fixture(parcel?: Pick<Parcel, 'data_origin'>) { return parcel?.data_origin === 'fixture' ? '<span class="badge fixture">开发模拟数据</span>' : ''; }

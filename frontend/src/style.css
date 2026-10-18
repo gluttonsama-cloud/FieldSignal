@@ -18,3 +18,5 @@
 
 .visit-top{flex-wrap:wrap}.visit-top .schedule-late{color:#87551f}.visit-top .schedule-today{color:#2c5b3e;font-weight:600}
  .schedule-note{margin:0 20px 8px}
+
+.record-top{flex-wrap:wrap}.record-top small,.field-main .record-top small{font-size:11px;line-height:1.6}.record-top small span{display:block}.history-note{margin:0 20px 8px}
