@@ -88,7 +88,7 @@ export function harness({ pathname = '/admin' } = {}) {
     fmtTime: value => value, localInput: value => value, esc: String, fixture: () => '',
   });
   vm.runInContext(`${mainSource}\nglobalThis.realRefresh=refresh; render=()=>{}; refresh=async()=>{};
-    dashboard.parcels=[{id:'p1',name:'Parcel one',data_origin:'user'},{id:'p2',name:'Parcel two',data_origin:'user'}];
+    dashboard.parcels=[{id:'p1',name:'Parcel one',season:'2026-2027',data_origin:'user'},{id:'p2',name:'Parcel two',season:'2026-2027',data_origin:'user'}];
     visits=[{id:'v1',parcel_id:'p1'},{id:'v2',parcel_id:'p2'}]; selectedId='p1';`, context);
   return {
     context, app, modal, toast, window,

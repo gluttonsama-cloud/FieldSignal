@@ -268,7 +268,7 @@ async function openVerification(visitId:string) {
     if(session!==dialogSession)return;
     const v=visits.find(v=>v.id===visitId); const p=v?parcelFor(v.parcel_id):undefined;
     if(!saved&&!v)throw new Error('未找到巡田任务，请刷新后重试。');
-    const draft: VerificationDraft=saved||{visit_id:visitId,parcel_id:v!.parcel_id,parcel_name:p?.name||v!.parcel_id,data_origin:p?.data_origin||'user',client_submission_id:crypto.randomUUID(),observed_at:new Date().toISOString(),label:'uncertain',note:'',photos:[],state:'draft',updated_at:new Date().toISOString()};
+    const draft: VerificationDraft=saved||{visit_id:visitId,parcel_id:v!.parcel_id,parcel_name:p?.name||v!.parcel_id,...(p?.season?{parcel_season:p.season}:{}),data_origin:p?.data_origin||'user',client_submission_id:crypto.randomUUID(),observed_at:new Date().toISOString(),label:'uncertain',note:'',photos:[],state:'draft',updated_at:new Date().toISOString()};
     // Viewing an existing durable draft must not require a new storage write.
     if(!saved)await writeDraft(draft,true);
     if(session!==dialogSession)return;
@@ -307,7 +307,39 @@ async function confirmDraftRemoval(button: HTMLButtonElement) {
     await refreshDraftList();
   }
 }
-function verificationModal() { const d=currentDraft!; openModal('现场核查',`<form id="verification-form"><fieldset id="verification-fields"><div class="verification-parcel"><span class="parcel-icon">▧</span><div><strong>${esc(d.parcel_name)}</strong>${fixture(d)}<small>你的观察将作为用户报告保存，不是确诊结果。</small></div></div><div class="draft-save" id="draft-save" role="status">已保存到本机 · ${esc(fmtTime(d.updated_at))}</div><button type="button" id="retry-draft-save" class="text-button" data-action="retry-draft-save" hidden>重试保存到本机</button>${d.error?`<div class="notice warning">上次提交未完成：${esc(d.error)}<br>草稿与照片仍在，点击下方按钮手动重试。</div>`:''}<label>现场观察时间<input name="observed_at" type="datetime-local" value="${localInput(d.observed_at)}" required></label><span class="label-title" id="observation-label">看到什么情况？</span><div class="label-options" role="group" aria-labelledby="observation-label">${Object.entries(labels).map(([v,t])=>`<label class="radio-option"><input type="radio" name="label" value="${v}" ${d.label===v?'checked':''}><span>${t}</span></label>`).join('')}</div><label>现场备注<textarea name="note" rows="4" maxlength="2000" required placeholder="记录叶片、土壤、积水范围等所见现象。">${esc(d.note)}</textarea></label><div class="photo-heading"><span class="label-title">现场照片 <small>选填</small></span><span class="subtle" id="photo-count">${d.photos.length} 张</span></div><div class="photo-picker"><label class="button secondary">拍照 / 选择照片<input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p class="caption">JPG、PNG、WebP，最多 8 张，每张最多 10 MB、1600 万像素。照片会随草稿保存在当前浏览器，仅在你提交时上传至本地服务。</p></div><div id="draft-photos" class="draft-photos"></div><p class="caption" id="no-photo">${d.photos.length?'':'当前未附现场照片，仍可提交核查。'}</p><div class="notice subtle-notice">离线时可继续填写并保存草稿。不会自动后台上传；不要在提交前清理浏览器数据。</div><div class="dialog-actions"><button type="button" class="button secondary" data-action="save-close">保存并返回</button><button type="submit" class="button primary">${d.state==='error'||d.state==='pending_upload'?'重试提交核查':'提交核查'}</button></div></fieldset></form>`); renderDraftPhotos(); }
+function validVerificationSeason(season?: string): string | undefined {
+  if(!season||!/^20\d{2}-20\d{2}$/.test(season))return;
+  const [first,last]=season.split('-').map(Number);
+  return last===first+1?season:undefined;
+}
+function verificationSeason(draft: VerificationDraft): string | undefined {
+  return validVerificationSeason(parcelFor(draft.parcel_id)?.season)||validVerificationSeason(draft.parcel_season);
+}
+function verificationTimeError(draft: VerificationDraft, now=Date.now()): string {
+  const timestamp=Date.parse(draft.observed_at);
+  if(!Number.isFinite(timestamp))return '请填写真实的现场观察时间。';
+  if(timestamp>now)return '观察时间晚于本机当前时间，请核对实际观察时间及设备时钟。';
+  const season=verificationSeason(draft);if(!season)return '';
+  const [first,last]=season.split('-');
+  const parts=new Intl.DateTimeFormat('en',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(timestamp));
+  const day=['year','month','day'].map(type=>parts.find(part=>part.type===type)!.value).join('-');
+  return day<`${first}-07-01`||day>`${last}-06-30`?`观察时间不在 ${season} 种植季内（北京时间 ${first}-07-01 至 ${last}-06-30）。请核对任务地块、种植季及真实观察时间，不要代填历史日期。`:'';
+}
+function verificationTimeHelp(draft: VerificationDraft): string {
+  const season=verificationSeason(draft);
+  return season?`种植季 ${season} · 北京时间 ${season.slice(0,4)}-07-01 至 ${season.slice(5)}-06-30。输入按本机时区显示，提交时仍由服务端核对。`:'本机未保存此地块种植季。可继续编辑及保存；手动提交时须先连接本地服务核对地块与季节，之后才发送照片。输入按本机时区显示。';
+}
+async function checkVerificationTimeBeforeUpload(draft: VerificationDraft): Promise<{ error: string; season?: string }> {
+  const issue=verificationTimeError(draft);if(issue)return {error:issue};
+  if(verificationSeason(draft))return {error:''};
+  try {
+    const parcel=await api<Parcel>(`/parcels/${encodeURIComponent(draft.parcel_id)}`);
+    if(parcel?.id!==draft.parcel_id||!validVerificationSeason(parcel.season))return {error:'尚未确认对应地块及种植季，未发送照片或核查。请保留草稿，连接本地服务后重试。'};
+    const checked=verificationTimeError({...draft,parcel_season:parcel.season});
+    return checked?{error:checked}:{error:'',season:parcel.season};
+  } catch(error) { return {error:`提交前未能核对地块种植季：${msg(error)} 草稿与照片保留在本机，本次未发送照片或核查，请连接本地服务后重试。`}; }
+}
+function verificationModal() { const d=currentDraft!; openModal('现场核查',`<form id="verification-form"><fieldset id="verification-fields"><div class="verification-parcel"><span class="parcel-icon">▧</span><div><strong>${esc(d.parcel_name)}</strong>${fixture(d)}<small>你的观察将作为用户报告保存，不是确诊结果。</small></div></div><div class="draft-save" id="draft-save" role="status">已保存到本机 · ${esc(fmtTime(d.updated_at))}</div><button type="button" id="retry-draft-save" class="text-button" data-action="retry-draft-save" hidden>重试保存到本机</button>${d.error?`<div class="notice warning">上次提交未完成：${esc(d.error)}<br>草稿与照片仍在，点击下方按钮手动重试。</div>`:''}<label>现场观察时间<input name="observed_at" type="datetime-local" value="${localInput(d.observed_at)}" required></label><p class="caption">${esc(verificationTimeHelp(d))}</p><p id="verification-time-error" class="notice warning" role="status" ${verificationTimeError(d)?'':'hidden'}>${esc(verificationTimeError(d))}</p><span class="label-title" id="observation-label">看到什么情况？</span><div class="label-options" role="group" aria-labelledby="observation-label">${Object.entries(labels).map(([v,t])=>`<label class="radio-option"><input type="radio" name="label" value="${v}" ${d.label===v?'checked':''}><span>${t}</span></label>`).join('')}</div><label>现场备注<textarea name="note" rows="4" maxlength="2000" required placeholder="记录叶片、土壤、积水范围等所见现象。">${esc(d.note)}</textarea></label><div class="photo-heading"><span class="label-title">现场照片 <small>选填</small></span><span class="subtle" id="photo-count">${d.photos.length} 张</span></div><div class="photo-picker"><label class="button secondary">拍照 / 选择照片<input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p class="caption">JPG、PNG、WebP，最多 8 张，每张最多 10 MB、1600 万像素。照片会随草稿保存在当前浏览器，仅在你提交时上传至本地服务。</p></div><div id="draft-photos" class="draft-photos"></div><p class="caption" id="no-photo">${d.photos.length?'':'当前未附现场照片，仍可提交核查。'}</p><div class="notice subtle-notice">离线时可继续填写并保存草稿。不会自动后台上传；不要在提交前清理浏览器数据。</div><div class="dialog-actions"><button type="button" class="button secondary" data-action="save-close">保存并返回</button><button type="submit" class="button primary">${d.state==='error'||d.state==='pending_upload'?'重试提交核查':'提交核查'}</button></div></fieldset></form>`); renderDraftPhotos(); }
 function renderDraftPhotos() { revokePhotos(); const d=currentDraft; const container=modal.querySelector('#draft-photos'); if(!d||!container)return; container.innerHTML=d.photos.map(p=>{ const url=URL.createObjectURL(p.blob);photoUrls.push(url);return `<div class="draft-photo"><img src="${url}" alt="待提交现场照片 ${esc(p.name)}"><button type="button" data-action="remove-photo" data-id="${esc(p.key)}" aria-label="移除照片 ${esc(p.name)}">×</button><small>${p.uploaded_id?'已上传 · 等待核查提交':`${(p.blob.size/1024/1024).toFixed(1)} MB`}</small></div>`; }).join(''); const count=modal.querySelector('#photo-count');if(count)count.textContent=`${d.photos.length} 张`;const none=modal.querySelector('#no-photo');if(none)none.textContent=d.photos.length?'':'当前未附现场照片，仍可提交核查。'; }
 async function writeDraft(draft: VerificationDraft, startNew=false) {
   ++draftEpoch;
@@ -356,13 +388,20 @@ async function flushDraft() {
 }
 async function submitVerification() {
   if(!currentDraft||submitting)return;
-  storedDraftView=undefined;
+  const timeError=verificationTimeError(currentDraft);if(timeError){formError(timeError);return;}
   submitting=true;const d=currentDraft,session=dialogSession;let uploadStarted=false;
   const ownsDialog=()=>session===dialogSession&&currentDraft===d;
   const fields=modal.querySelector<HTMLFieldSetElement>('#verification-fields');if(fields)fields.disabled=true;
   try {
+    const preflight=await checkVerificationTimeBeforeUpload(d);
+    if(!ownsDialog()){toast('先前核查尚未发送；表单已切换，请重新打开草稿后手动提交。');return;}
+    if(preflight.error){formError(preflight.error);return;}
+    if(preflight.season)d.parcel_season=preflight.season;
+    storedDraftView=undefined;
     await flushDraft();
+    if(!ownsDialog()){toast('先前核查尚未发送；表单已切换，请重新打开草稿后手动提交。');return;}
     d.state='pending_upload';d.error=undefined;await writeDraft(d);
+    if(!ownsDialog()){toast('先前核查尚未发送；表单已切换，请重新打开草稿后手动提交。');return;}
     uploadStarted=true;
     const status=modal.querySelector('#draft-save');if(status)status.textContent='正在上传至本地服务，请勿关闭…';
     ++draftEpoch;
@@ -419,7 +458,7 @@ document.addEventListener('click',async event=>{ const button=(event.target as E
 });
 modal.addEventListener('cancel',event=>{if(submitting||draftRemoval?.busy){event.preventDefault();return;}const session=++dialogSession;if(currentDraft){event.preventDefault();void flushDraft().then(async()=>{if(session!==dialogSession)return;closeModal();currentDraft=undefined;await refreshDraftList();}).catch(e=>{if(session===dialogSession)formError(msg(e));});}});
 modal.addEventListener('close',()=>{if(!modal.open){currentDraft=undefined;storedDraftView=undefined;draftRemoval=undefined;revokePhotos();}});
-modal.addEventListener('input',event=>{const input=event.target as HTMLInputElement|HTMLTextAreaElement;editObservationJson(input);editParcelGeometry(input);if(!currentDraft||submitting||!input.closest('#verification-form'))return;if(input.name==='note')currentDraft.note=input.value;if(input.name==='label')currentDraft.label=input.value;if(input.name==='observed_at'&&input.value&&!Number.isNaN(+new Date(input.value)))currentDraft.observed_at=new Date(input.value).toISOString();void queueSave();});
+modal.addEventListener('input',event=>{const input=event.target as HTMLInputElement|HTMLTextAreaElement;editObservationJson(input);editParcelGeometry(input);if(!currentDraft||submitting||!input.closest('#verification-form'))return;if(input.name==='note')currentDraft.note=input.value;if(input.name==='label')currentDraft.label=input.value;if(input.name==='observed_at'&&input.value&&!Number.isNaN(+new Date(input.value)))currentDraft.observed_at=new Date(input.value).toISOString();if(input.name==='observed_at'){const hint=modal.querySelector<HTMLElement>('#verification-time-error');if(hint){hint.textContent=input.value?verificationTimeError(currentDraft):'请填写真实的现场观察时间。';hint.hidden=!hint.textContent;}}void queueSave();});
 modal.addEventListener('change',async event=>{const input=event.target as HTMLInputElement;const changeSession=dialogSession;try{if(input.id==='observation-record'){selectObservation(input as unknown as HTMLSelectElement);return;}if(input.id==='observation-file')await readObservationFile(input);if(input.id==='parcel-file')await readParcelFile(input);if(input.id==='photo-input'&&input.files&&currentDraft&&!submitting){const files=Array.from(input.files);if(currentDraft.photos.length+files.length>8)throw new Error('每次核查最多 8 张照片，请减少所选照片。');for(const file of files){if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('仅支持 JPG、PNG 或 WebP 照片。');if(file.size>10*1024*1024)throw new Error(`照片 ${file.name} 超过 10 MB，请选择较小照片。`);}for(const file of files)currentDraft.photos.push({key:crypto.randomUUID(),blob:file,name:file.name});await queueSave();renderDraftPhotos();input.value='';}}catch(error){if(changeSession===dialogSession)formError(msg(error));else toast(`先前表单处理未完成：${msg(error)}`);}});
 modal.addEventListener('submit',async event=>{event.preventDefault();const form=event.target as HTMLFormElement;if(form.id==='parcel-form'&&parcelReads.has(form)){formError('边界文件仍在读取，请等待完成或手动编辑边界后再保存。');return;}if(form.id==='observation-form'&&observationBundles.has(form)&&observationBundles.get(form)!.selected===undefined){formError('请先选择规范化文件中的一条观测，或手动编辑 JSON。');return;}if(form.id==='observation-form'&&observationReads.has(form)){formError('所选文件仍在读取，请等待完成或手动编辑 JSON 后再提交。');return;}if(!form.reportValidity())return;if(form.id==='verification-form')return submitVerification();const submit=form.querySelector<HTMLButtonElement>('[type="submit"]')!;if(submit.disabled)return;const data=new FormData(form);submit.disabled=true;form.dataset.submitting='true';const fields=form.querySelector<HTMLFieldSetElement>('#observation-fields')||form.querySelector<HTMLFieldSetElement>('#parcel-fields');if(fields)fields.disabled=true;const session=dialogSession;const isCurrent=()=>modal.open&&session===dialogSession;const value=(key:string)=>String(data.get(key)||'').trim();let recordAttempted=false;try{
   if(form.id==='parcel-form'){const geometry=parseParcelGeometry(value('geometry'));recordAttempted=true;const p=await postRecord<Parcel>(form,'/parcels',{name:value('name'),region:value('region'),season:value('season'),geometry,...(value('sowing_date')?{sowing_date:value('sowing_date')}:{}),...(value('cultivar')?{cultivar:value('cultivar')}:{})});if(isCurrent()){selectedId=p.id;region='all';}toast('地块已录入，等待接入观测数据。');}

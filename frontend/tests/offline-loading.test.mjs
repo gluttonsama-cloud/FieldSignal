@@ -6,7 +6,7 @@ import { verificationResult, harness, deferred, turn } from './helpers/ui-harnes
 const dashboard = () => ({ parcel_count: 0, open_risk_count: 0, pending_visit_count: 0,
   verification_count: 0, parcels: [], recent_verifications: [] });
 const draft = (name = 'Saved local draft') => ({ visit_id: 'saved-visit', parcel_id: 'saved-parcel',
-  parcel_name: name, data_origin: 'user', client_submission_id: 'saved-submission',
+  parcel_name: name, parcel_season: '2026-2027', data_origin: 'user', client_submission_id: 'saved-submission',
   observed_at: '2026-10-18T12:00:00Z', label: 'uncertain', note: 'Saved observation',
   photos: [{ key: 'photo-one', name: 'field.png', blob: new Blob(['field-photo'], { type: 'image/png' }) }],
   state: 'draft', updated_at: '2026-10-18T12:00:00Z', revision: 1 });

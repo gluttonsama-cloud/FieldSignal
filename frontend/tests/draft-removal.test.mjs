@@ -13,7 +13,7 @@ async function setup(){
   const ui=harness({pathname:'/field'});let network=0;
   Object.assign(ui.context,{listDrafts:storage.listDrafts,removeDraft:storage.removeDraft,saveDraft:storage.saveDraft,esc,fmtDate:String,empty:()=>'',post:async()=>{network++;throw Error('No network expected');},uploadVerificationDraft:async()=>{network++;throw Error('No upload expected');}});
   ui.context.saved=await storage.listDrafts();ui.run('drafts=saved; visits=[]');
-  return Object.assign(ui,{get network(){return network;}});
+  Object.defineProperty(ui,'network',{get:()=>network});return ui;
 }
 
 test('single draft removal has a separate scoped confirmation; cancel leaves notes and photos intact',async()=>{
