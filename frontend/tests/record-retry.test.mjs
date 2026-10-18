@@ -242,7 +242,7 @@ test('opening, editing, rendering, network events, and invalid forms never autom
   assert.equal(calls.length, 0);
 });
 
-test('unrelated observation, visit, analysis, and fixture POSTs have no idempotency header', async t => {
+test('only supported record creates carry idempotency headers; analysis and imports are unchanged', async t => {
   const { ui, calls } = transport(t, call => Response.json(call.path.endsWith('/analyses')
     ? { status: 'insufficient_data', message: 'No usable data' }
     : { id: 'ordinary-result', created: false, parcel_id: 'p1' }));
@@ -262,7 +262,7 @@ test('unrelated observation, visit, analysis, and fixture POSTs have no idempote
   ]);
   calls.forEach(call => {
     assert.equal(call.method, 'POST');
-    assert.equal(call.headers.has('Idempotency-Key'), false);
+    assert.equal(call.headers.has('Idempotency-Key'), call.path === '/api/v1/visits');
     assert.equal(call.headers.get('Content-Type'), 'application/json');
   });
 });

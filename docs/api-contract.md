@@ -24,7 +24,7 @@ All paths begin `/api/v1`; JSON uses snake_case. API errors return `{error: {cod
 - POST `/parcels/{id}/analyses` body `{method?: "statistical"|"isolation_forest"}` → AnalysisRun. Evaluates latest eligible observation; stale or low-quality data never becomes a new alert.
 - GET `/parcels/{id}/analyses` → AnalysisRun[]
 - GET `/risks` → RiskCandidate[]
-- POST `/visits` body `{parcel_id, risk_id?, due_date, assignee?, note?}` → Visit (risk parcel must match; duplicate active visit returns 409)
+- POST `/visits` body `{parcel_id, risk_id?, due_date, assignee?, note?}` → Visit. Omitted/null `risk_id` creates a routine manual visit without a candidate; a linked risk must belong to the parcel, have no pending visit and not be verified (otherwise 422/409). `due_date` is a planning date and need not fall within the parcel season; actual verification time must. Supports optional `Idempotency-Key` as below.
 - GET `/visits` → Visit[]
 - POST `/visits/{id}/photos` raw `image/jpeg|image/png|image/webp`, max 10 MB → `{id, visit_id, content_type, size_bytes, created_at}`. No outbound transfer; strips metadata by decoding/re-encoding.
 - DELETE `/visits/{visit_id}/photos/{photo_id}` → 204, idempotently removes a same-visit staged photo while the visit is pending. Completed evidence is immutable through this route. Offline clients persist a delete queue and drain it before replacement uploads.
@@ -35,16 +35,16 @@ All paths begin `/api/v1`; JSON uses snake_case. API errors return `{error: {cod
 - GET `/parcels/{id}/events` → FarmEvent[]
 - POST `/dev/fixtures` → `{created: bool, parcel_id}` only if `FIELDSIGNAL_ENABLE_FIXTURES=1`. Inserts one conspicuously named synthetic parcel + simulated optical history. No fake true labels. Does not overwrite real data.
 
-## 地块与农事请求重试
+## 地块、农事与巡田请求重试
 
-仅 POST `/parcels` 与 POST `/parcels/{id}/events` 支持可选 `Idempotency-Key`：1–128 位 ASCII 字母、数字或 `._:-`，区分大小写；重复请求头返回422。同一数据库中编号全局唯一，并绑定请求类型、目标地块及校验/默认值归一后的内容。相同请求重试返回原来的 201 和记录；同编号换内容、类型或地块返回 409 `idempotency_conflict`。记录与回执在同一 SQLite 事务提交，并发及服务重启后仍可核对。无此请求头的旧客户端保持原行为；不自动去重历史数据；回执无自动过期，会随使用占用本地数据库空间。
+POST `/parcels`、POST `/parcels/{id}/events` 与 POST `/visits` 支持可选 `Idempotency-Key`：1–128 位 ASCII 字母、数字或 `._:-`，区分大小写；重复请求头返回422。同一数据库中编号全局唯一，并绑定请求类型、目标地块及校验/默认值归一后的内容。相同请求重试返回原来的 201 和记录；同编号换内容、类型或地块返回 409 `idempotency_conflict`。记录与回执在同一 SQLite 事务提交，并发及服务重启后仍可核对。巡田回执还绑定候选、计划日期、负责人和备注，与关联候选的 assigned 状态更新一起提交；即使任务随后已完成、候选已核验，重试仍返回创建时的原始回执，当前状态以 GET 列表为准。无此请求头的旧客户端保持原行为；无关联候选的重复请求会创建独立任务；不自动去重历史数据；回执无自动过期，会随使用占用本地数据库空间。
 
-前端编号仅保留在当前打开的地块/农事表单。相同已提交内容复用编号，改为新内容使用新编号；改回先前提交的内容仍复用原编号。关闭、重开或刷新页面后不保证识别此前请求。响应中断时原记录可能已保存，应保持内容重试核对，改内容或重开前先检查列表。此机制不新增离线农事草稿或自动提交。
+前端编号仅保留在当前打开的地块/农事/巡田表单。相同已提交内容复用编号，改为新内容使用新编号；改回先前提交的内容仍复用原编号。关闭、重开或刷新页面后不保证识别此前请求。响应中断时原记录可能已保存，应保持内容重试核对，改内容或重开前先检查列表。此机制不新增离线农事或建任务草稿、自动提交。
 
 ## UI
 
-- `/` or `/admin`: management page, region/parcel selection, local boundary map (no external tiles), provenance + quality + history, analysis action, candidate → create visit, verification list, parcel create (paste GeoJSON supported), observation JSON input (developer/import workflow).
-- `/field`: distinct phone-first workflow, pending visit priorities, parcel summary/trend, camera/gallery attachment + observed label + note form, farm event form. Bottom navigation: 巡田 / 地块 / 记录. Browser-based mobile prototype, not yet a native app, offline sync or notifications.
+- `/` or `/admin`: management page, region/parcel selection, local boundary map (no external tiles), provenance + quality + history, analysis action, candidate → create visit, routine manual visit entry, verification list, parcel create (paste GeoJSON supported), observation JSON input (developer/import workflow).
+- `/field`: distinct phone-first workflow, pending visit priorities, parcel summary/trend, routine manual visit entry, camera/gallery attachment + observed label + note form, farm event form. Routine and candidate-linked visits show distinct source labels; forms retain the chosen parcel and show its season. Bottom navigation: 巡田 / 地块 / 记录. Browser-based mobile prototype, not yet a native app, offline sync or notifications.
 - Always show no observations as `待接入数据`; expired as `数据已过期`; synthetic as `开发模拟数据`. User field locations/photos stay local. No external map or telemetry calls.
 
 Boundary source defaults to user_provided; user_survey/public_dataset describe the submitted provenance rather than verified ownership. Synthetic fixtures override the source to synthetic_fixture. Area is a local estimate, not a surveying result. Observation ingestion time is separate from acquisition time. Temporal support defaults to instantaneous; daily UTC/local-solar/Beijing intervals must remain distinguishable.

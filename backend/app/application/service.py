@@ -52,7 +52,7 @@ class FieldService:
         if key is None: return None
         prior=self.store.receipt(c,key)
         if prior is None: return None
-        # Keys are global across parcel/event creates, not scoped to a route.
+        # Keys are global across create operations, not scoped to a route.
         if (prior['operation'],prior['target'],prior['request_json'])!=(operation,target,request_json):
             raise ServiceError(409,'idempotency_conflict','该提交编号已用于不同内容、操作或地块，请查看已保存记录。')
         return json.loads(prior['response_json'])
@@ -119,8 +119,11 @@ class FieldService:
             run=entity('run',parcel_id=parcel_id,method=method,model_version=MODEL_VERSION,evaluated_at=now_iso(),status=result['status'],risk_id=risk_id,observation_count=result['observation_count'],message=result['message'],data_origin=p['data_origin'])
             return self.store.insert(c,'analyses',run,parcel_id=parcel_id)
 
-    def create_visit(self,payload):
+    def create_visit(self,payload,idempotency_key=None):
+        request_json=self.idempotency_request(payload,idempotency_key)
         with self.store.connect(write=True) as c:
+            prior=self.replay(c,idempotency_key,'create_visit',payload.parcel_id,request_json)
+            if prior is not None: return prior
             p=self.required(c,'parcels',payload.parcel_id)
             if payload.risk_id:
                 risk=self.required(c,'risks',payload.risk_id)
@@ -132,6 +135,8 @@ class FieldService:
             self.store.insert(c,'visits',visit,parcel_id=p['id'],risk_id=payload.risk_id,status='pending')
             if payload.risk_id:
                 risk['status']='assigned';self.store.update(c,'risks',risk)
+            if idempotency_key is not None:
+                self.store.insert_receipt(c,idempotency_key,'create_visit',payload.parcel_id,request_json,visit)
             return visit
 
     def upload_photo(self,visit_id,content_type,raw):

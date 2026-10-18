@@ -1,9 +1,10 @@
-"""Durable parcel/event retry guarantees through the real API and SQLite adapter."""
+"""Durable create retry guarantees through the real API and SQLite adapter."""
 import json
 import sqlite3
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Barrier
 from unittest.mock import patch
@@ -55,6 +56,21 @@ class IdempotencyTests(unittest.TestCase):
         self.assertEqual(response.status_code,201,response.text)
         return response.json()['id']
 
+    def visit_body(self,linked=False):
+        if not linked: return {'parcel_id':self.parcel(),'due_date':'2020-03-01'}
+        # Generate an actual candidate through the fixture/analysis API, on a
+        # stable date with enough seasonal history regardless of the run date.
+        with patch('app.application.service.datetime',wraps=datetime) as service_clock,patch('app.domain.detection.datetime',wraps=datetime) as detection_clock:
+            service_clock.now.return_value=detection_clock.now.return_value=datetime(2020,3,1,tzinfo=timezone.utc)
+            client=self.new_client(create_app(self.db,True))
+            seed=self.post('/api/v1/dev/fixtures',{},client=client)
+            self.assertEqual(seed.status_code,201,seed.text)
+            parcel_id=seed.json()['parcel_id']
+            run=self.post(f'/api/v1/parcels/{parcel_id}/analyses',{},client=client)
+            self.assertEqual(run.status_code,201,run.text)
+            self.assertEqual(run.json()['status'],'candidate')
+        return {'parcel_id':parcel_id,'risk_id':run.json()['risk_id'],'due_date':'2020-03-01'}
+
     def count(self,table):
         with sqlite3.connect(self.db) as c:
             return c.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]
@@ -87,6 +103,9 @@ class IdempotencyTests(unittest.TestCase):
         url=f'/api/v1/parcels/{self.parcel()}/events'
         self.assert_lost_response_retry(url,self.event_body,'event-lost-response','events')
 
+    def test_manual_visit_committed_response_lost_retries_after_reopen(self):
+        self.assert_lost_response_retry('/api/v1/visits',self.visit_body(),'visit-lost-response','visits')
+
     def test_parcel_request_binding_uses_validated_defaults_and_sorted_json(self):
         first=self.post('/api/v1/parcels',self.parcel_body,'normalized-parcel')
         normalized={**self.parcel_body,'name':'  测试地块  ','region':'shayang','crop':'oilseed_rape','sowing_date':None,'cultivar':None,'boundary_source':'user_provided','boundary_reference':None}
@@ -105,6 +124,49 @@ class IdempotencyTests(unittest.TestCase):
         self.assertEqual(first.status_code,201,first.text)
         self.assertEqual(retry.status_code,201,retry.text)
         self.assertEqual(first.json(),retry.json())
+
+    def test_visit_request_binding_uses_validated_defaults_and_text(self):
+        body={**self.visit_body(),'assignee':'张三','note':'日常巡田'}
+        first=self.post('/api/v1/visits',body,'normalized-visit')
+        retry=self.post('/api/v1/visits',dict(reversed(list({**body,'risk_id':None,'assignee':'  张三  ','note':'  日常巡田  '}.items()))),'normalized-visit')
+        self.assertEqual(first.status_code,201,first.text)
+        self.assertEqual(retry.status_code,201,retry.text)
+        self.assertEqual(first.json(),retry.json())
+        self.assertEqual(self.count('visits'),1)
+
+    def test_visit_changed_target_risk_or_content_conflicts_before_validation(self):
+        body=self.visit_body(linked=True)
+        first=self.post('/api/v1/visits',body,'visit-content')
+        self.assertEqual(first.status_code,201,first.text)
+        for altered in [{'parcel_id':self.parcel()},{'parcel_id':'missing'},{'risk_id':None},{'risk_id':'missing'},{'due_date':'2020-03-02'},{'assignee':'张三'},{'note':'变更备注'}]:
+            with self.subTest(altered=altered):
+                self.assert_conflict(self.post('/api/v1/visits',{**body,**altered},'visit-content'))
+        self.assertEqual(self.count('visits'),1)
+        self.assertEqual(self.count('idempotency_receipts'),1)
+
+    def test_linked_visit_replays_after_completion_and_preserves_no_key_guards(self):
+        body=self.visit_body(linked=True)
+        first=self.post('/api/v1/visits',body,'linked-visit')
+        self.assertEqual(first.status_code,201,first.text)
+        for key in [None,'different-visit']:
+            duplicate=self.post('/api/v1/visits',body,key)
+            self.assertEqual(duplicate.status_code,409,duplicate.text)
+            self.assertEqual(duplicate.json()['error']['code'],'duplicate_visit')
+        self.assertEqual(self.client.get('/api/v1/risks').json()[0]['status'],'assigned')
+        verified=self.post(f"/api/v1/visits/{first.json()['id']}/verifications",{'observed_at':'2020-03-01T00:00:00Z','label':'uncertain','note':'测试核验'})
+        self.assertEqual(verified.status_code,201,verified.text)
+        reopened=self.new_client(create_app(self.db,False))
+        retry=self.post('/api/v1/visits',body,'linked-visit',reopened)
+        self.assertEqual(retry.status_code,201,retry.text)
+        self.assertEqual(retry.json(),first.json())
+        self.assertEqual(reopened.get('/api/v1/visits').json()[0]['status'],'completed')
+        self.assertEqual(reopened.get('/api/v1/risks').json()[0]['status'],'verified')
+        for key in [None,'different-visit']:
+            rejected=self.post('/api/v1/visits',body,key)
+            self.assertEqual(rejected.status_code,409,rejected.text)
+            self.assertEqual(rejected.json()['error']['code'],'risk_verified')
+        self.assertEqual(self.count('visits'),1)
+        self.assertEqual(self.count('idempotency_receipts'),1)
 
     def test_changed_parcel_content_conflicts_but_new_key_allows_intentional_create(self):
         first=self.post('/api/v1/parcels',self.parcel_body,'parcel-content')
@@ -137,9 +199,16 @@ class IdempotencyTests(unittest.TestCase):
         self.assert_conflict(self.post('/api/v1/parcels',self.parcel_body,'event-key'))
         for target in [p2,'missing']:
             self.assert_conflict(self.post(f'/api/v1/parcels/{target}/events',self.event_body,'event-key'))
+        visit_body={'parcel_id':p1,'due_date':'2020-03-01'}
+        for key in ['parcel-key','event-key']:
+            self.assert_conflict(self.post('/api/v1/visits',visit_body,key))
+        self.assertEqual(self.post('/api/v1/visits',visit_body,'visit-key').status_code,201)
+        self.assert_conflict(self.post('/api/v1/parcels',self.parcel_body,'visit-key'))
+        self.assert_conflict(self.post(url,self.event_body,'visit-key'))
         self.assertEqual(self.count('parcels'),2)
         self.assertEqual(self.count('events'),1)
-        self.assertEqual(self.count('idempotency_receipts'),2)
+        self.assertEqual(self.count('visits'),1)
+        self.assertEqual(self.count('idempotency_receipts'),3)
 
     def concurrent_posts(self,url,bodies,key):
         # Independent stores and connections, synchronized at the API boundary.
@@ -167,8 +236,20 @@ class IdempotencyTests(unittest.TestCase):
         self.assertEqual(self.count('events'),1)
         self.assertEqual(self.count('idempotency_receipts'),1)
 
+    def test_concurrent_visit_retries_across_separate_stores_create_once(self):
+        for linked in [False,True]:
+            with self.subTest(linked=linked):
+                body=self.visit_body(linked=linked)
+                before=self.count('visits')
+                receipts=self.count('idempotency_receipts')
+                responses=self.concurrent_posts('/api/v1/visits',[body]*6,f'concurrent-visit-{linked}')
+                self.assertEqual([r.status_code for r in responses],[201]*6)
+                self.assertTrue(all(r.json()==responses[0].json() for r in responses))
+                self.assertEqual(self.count('visits'),before+1)
+                self.assertEqual(self.count('idempotency_receipts'),receipts+1)
+
     def test_concurrent_changed_payload_has_one_winner_and_one_conflict(self):
-        for url,body,field,table in [('/api/v1/parcels',self.parcel_body,'name','parcels'),(f'/api/v1/parcels/{self.parcel()}/events',self.event_body,'note','events')]:
+        for url,body,field,table in [('/api/v1/parcels',self.parcel_body,'name','parcels'),(f'/api/v1/parcels/{self.parcel()}/events',self.event_body,'note','events'),('/api/v1/visits',self.visit_body(),'note','visits')]:
             with self.subTest(table=table):
                 before=self.count(table)
                 responses=self.concurrent_posts(url,[body,{**body,field:'不同内容'}],f'racing-{table}')
@@ -182,7 +263,7 @@ class IdempotencyTests(unittest.TestCase):
         def fail_after_receipt(*args):
             insert(*args)
             raise RuntimeError('injected failure after receipt write')
-        for url,body,table in [('/api/v1/parcels',self.parcel_body,'parcels'),(f'/api/v1/parcels/{self.parcel()}/events',self.event_body,'events')]:
+        for url,body,table in [('/api/v1/parcels',self.parcel_body,'parcels'),(f'/api/v1/parcels/{self.parcel()}/events',self.event_body,'events'),('/api/v1/visits',self.visit_body(linked=True),'visits')]:
             with self.subTest(table=table):
                 before=self.count(table)
                 receipts=self.count('idempotency_receipts')
@@ -192,10 +273,12 @@ class IdempotencyTests(unittest.TestCase):
                         self.post(url,body,key)
                 self.assertEqual(self.count(table),before)
                 self.assertEqual(self.count('idempotency_receipts'),receipts)
+                if table=='visits': self.assertEqual(self.client.get('/api/v1/risks').json()[0]['status'],'open')
                 retry=self.post(url,body,key,self.new_client(create_app(self.db,False)))
                 self.assertEqual(retry.status_code,201,retry.text)
                 self.assertEqual(self.count(table),before+1)
                 self.assertEqual(self.count('idempotency_receipts'),receipts+1)
+                if table=='visits': self.assertEqual(self.client.get('/api/v1/risks').json()[0]['status'],'assigned')
 
     def test_business_and_validation_failures_do_not_consume_key(self):
         p=self.parcel();url=f'/api/v1/parcels/{p}/events'
@@ -208,6 +291,15 @@ class IdempotencyTests(unittest.TestCase):
         self.assertEqual(self.count('events'),0)
         self.assertEqual(self.count('idempotency_receipts'),0)
         self.assertEqual(self.post(url,self.event_body,'retry-failure').status_code,201)
+        body=self.visit_body(linked=True)
+        for altered,status in [({'parcel_id':'missing'},404),({'risk_id':'missing'},404),({'parcel_id':p},422),({'due_date':'invalid'},422)]:
+            with self.subTest(altered=altered):
+                response=self.post('/api/v1/visits',{**body,**altered},'retry-visit-failure')
+                self.assertEqual(response.status_code,status,response.text)
+        self.assertEqual(self.count('visits'),0)
+        self.assertEqual(self.count('idempotency_receipts'),1)
+        self.assertEqual(self.client.get('/api/v1/risks').json()[0]['status'],'open')
+        self.assertEqual(self.post('/api/v1/visits',body,'retry-visit-failure').status_code,201)
 
     def test_no_header_preserves_create_each_time_behavior_without_receipts(self):
         first=self.post('/api/v1/parcels',self.parcel_body)
@@ -218,12 +310,20 @@ class IdempotencyTests(unittest.TestCase):
         one,two=self.post(url,self.event_body),self.post(url,self.event_body)
         self.assertEqual([one.status_code,two.status_code],[201,201])
         self.assertNotEqual(one.json()['id'],two.json()['id'])
+        # Planning dates may be outside a historic season; actual observation
+        # dates remain subject to the separate verification season validation.
+        visit_body={'parcel_id':first.json()['id'],'due_date':'2026-10-15'}
+        one,two=self.post('/api/v1/visits',visit_body),self.post('/api/v1/visits',visit_body)
+        self.assertEqual([one.status_code,two.status_code],[201,201])
+        self.assertNotEqual(one.json()['id'],two.json()['id'])
+        self.assertIsNone(one.json()['risk_id'])
         self.assertEqual(self.count('parcels'),2)
         self.assertEqual(self.count('events'),2)
+        self.assertEqual(self.count('visits'),2)
         self.assertEqual(self.count('idempotency_receipts'),0)
 
     def test_keys_reject_empty_unsafe_oversized_or_duplicate_headers_without_writes(self):
-        urls=[('/api/v1/parcels',self.parcel_body,'parcels'),(f'/api/v1/parcels/{self.parcel()}/events',self.event_body,'events')]
+        urls=[('/api/v1/parcels',self.parcel_body,'parcels'),(f'/api/v1/parcels/{self.parcel()}/events',self.event_body,'events'),('/api/v1/visits',self.visit_body(),'visits')]
         for url,body,table in urls:
             before=self.count(table)
             for key in ['', ' ', 'two words', 'a/b', 'a,b', 'a"b', 'a\nb', 'a\rb', 'a\tb', '\x00', 'x'*129]:

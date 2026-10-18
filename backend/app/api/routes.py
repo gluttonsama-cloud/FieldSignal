@@ -63,7 +63,8 @@ def router(service,fixtures_enabled):
     def risks(): return service.list('risks')
 
     @api.post('/visits',status_code=201)
-    def create_visit(body:VisitCreate): return service.create_visit(body)
+    def create_visit(body:VisitCreate,idempotency_key:str|None=Depends(request_idempotency_key)):
+        return service.create_visit(body,idempotency_key)
 
     @api.get('/visits')
     def visits(): return service.list('visits')
