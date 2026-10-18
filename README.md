@@ -38,3 +38,7 @@ bash scripts/run-local.sh
 - [验证记录](docs/verification.md)
 
 开发变更通过 Draft PR 审阅；当前工程仅用于本地验证。
+
+## PR 检查
+
+GitHub Actions 使用 Python 3.12、Node 24，在独立虚拟环境中安装锁定依赖，运行源码摘要、后端/前端测试、生产构建及隔离 HTTP 检查。每次结果以对应提交的 Checks 为准；不包含部署或浏览器视觉验收。
