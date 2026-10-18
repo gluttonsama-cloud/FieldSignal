@@ -1,9 +1,16 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import Response
 from app.domain.models import ParcelCreate, ObservationCreate, AnalysisCreate, VisitCreate, VerificationCreate, FarmEventCreate
 from app.application.service import ServiceError
 from app.domain.models import PublicSampleImportCreate
 from app.adapters.local_bundle import BundleError
+
+
+def request_idempotency_key(values:list[str]|None=Header(default=None,alias='Idempotency-Key',description='Optional single globally unique 1–128 character token: letters, digits, . _ : -. Reuse only for the same operation, target and normalized payload.')):
+    if values is None: return None
+    if len(values)!=1:
+        raise ServiceError(422,'invalid_idempotency_key','只能提供一个 Idempotency-Key 请求头。')
+    return values[0]
 
 
 def router(service,fixtures_enabled):
@@ -34,7 +41,8 @@ def router(service,fixtures_enabled):
     def parcels(): return service.list('parcels')
 
     @api.post('/parcels',status_code=201)
-    def create_parcel(body:ParcelCreate): return service.create_parcel(body)
+    def create_parcel(body:ParcelCreate,idempotency_key:str|None=Depends(request_idempotency_key)):
+        return service.create_parcel(body,idempotency_key)
 
     @api.get('/parcels/{parcel_id}')
     def parcel(parcel_id:str): return service.parcel(parcel_id)
@@ -88,7 +96,8 @@ def router(service,fixtures_enabled):
     def events(parcel_id:str): return service.list('events',parcel_id)
 
     @api.post('/parcels/{parcel_id}/events',status_code=201)
-    def add_event(parcel_id:str,body:FarmEventCreate): return service.add_event(parcel_id,body)
+    def add_event(parcel_id:str,body:FarmEventCreate,idempotency_key:str|None=Depends(request_idempotency_key)):
+        return service.add_event(parcel_id,body,idempotency_key)
 
     @api.post('/dev/fixtures',status_code=201)
     def fixture():

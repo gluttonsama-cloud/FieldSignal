@@ -1,6 +1,8 @@
 from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 from io import BytesIO
+import json
+import re
 import sqlite3
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -38,8 +40,32 @@ class FieldService:
     def parcel(self,parcel_id):
         with self.store.connect() as c: return self.required(c,'parcels',parcel_id)
 
-    def create_parcel(self,payload):
-        with self.store.connect(write=True) as c: return self._create_parcel(c,payload,'user')
+    @staticmethod
+    def idempotency_request(payload,key):
+        if key is None: return None
+        if not isinstance(key,str) or not re.fullmatch(r'[A-Za-z0-9._:-]{1,128}',key):
+            raise ServiceError(422,'invalid_idempotency_key','Idempotency-Key 须为1至128个英文字母、数字、点、下划线、冒号或连字符。')
+        # Bind to the validated/defaulted payload, not JSON whitespace/key order.
+        return json.dumps(payload.model_dump(mode='json'),sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
+
+    def replay(self,c,key,operation,target,request_json):
+        if key is None: return None
+        prior=self.store.receipt(c,key)
+        if prior is None: return None
+        # Keys are global across parcel/event creates, not scoped to a route.
+        if (prior['operation'],prior['target'],prior['request_json'])!=(operation,target,request_json):
+            raise ServiceError(409,'idempotency_conflict','该提交编号已用于不同内容、操作或地块，请查看已保存记录。')
+        return json.loads(prior['response_json'])
+
+    def create_parcel(self,payload,idempotency_key=None):
+        request_json=self.idempotency_request(payload,idempotency_key)
+        with self.store.connect(write=True) as c:
+            prior=self.replay(c,idempotency_key,'create_parcel','',request_json)
+            if prior is not None: return prior
+            result=self._create_parcel(c,payload,'user')
+            if idempotency_key is not None:
+                self.store.insert_receipt(c,idempotency_key,'create_parcel','',request_json,result)
+            return result
 
     def _create_parcel(self,c,payload,origin):
         p=entity('parcel',**payload.model_dump(mode='json'),area_ha=round(approximate_area_ha(payload.geometry.coordinates[0]),4),area_method='local_equirectangular_estimate_not_survey',data_origin=origin)
@@ -188,12 +214,18 @@ class FieldService:
                 self.store.update(c,'risks',risk)
             return result
 
-    def add_event(self,parcel_id,payload):
+    def add_event(self,parcel_id,payload,idempotency_key=None):
+        request_json=self.idempotency_request(payload,idempotency_key)
         with self.store.connect(write=True) as c:
+            prior=self.replay(c,idempotency_key,'add_event',parcel_id,request_json)
+            if prior is not None: return prior
             p=self.required(c,'parcels',parcel_id)
             self.require_season(p,payload.occurred_on)
             ev=entity('event',parcel_id=parcel_id,**payload.model_dump(mode='json'),data_origin=p['data_origin'])
-            return self.store.insert(c,'events',ev,parcel_id=parcel_id)
+            self.store.insert(c,'events',ev,parcel_id=parcel_id)
+            if idempotency_key is not None:
+                self.store.insert_receipt(c,idempotency_key,'add_event',parcel_id,request_json,ev)
+            return ev
 
     def dashboard(self):
         with self.store.connect() as c:

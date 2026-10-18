@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
+import { ApiError } from '../../src/api.ts';
 import { DraftConflictError } from '../../src/drafts.ts';
 
 // Exercise the production event handlers with a tiny DOM boundary. This does not
@@ -77,7 +78,7 @@ export function harness({ pathname = '/admin' } = {}) {
     window,
     createSourceController: () => ({ refresh: async () => {} }),
     listDrafts: async () => [], saveDraft: async draft => { draft.revision = (draft.revision || 0) + 1; },
-    post: async () => ({}), DraftConflictError, crypto, structuredClone, URL, Date, Error, Promise,
+    post: async () => ({}), DraftConflictError, ApiError, crypto, structuredClone, URL, Date, Error, Promise,
     setTimeout() {}, HTMLButtonElement: Button,
     FormData: class { constructor(form) { this.form = form; } get(key) { return this.form.values[key]; } },
     regions: {}, kinds: {}, labels: {}, today: () => '2026-10-18',

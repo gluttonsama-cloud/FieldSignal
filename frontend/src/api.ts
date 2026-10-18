@@ -18,4 +18,4 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     throw new Error('暂时无法连接本地服务，请确认服务正在运行后重试。');
   } finally { clearTimeout(timer); }
 }
-export function post<T>(path: string, data: unknown) { return api<T>(path, { method: 'POST', body: JSON.stringify(data) }); }
+export function post<T>(path: string, data: unknown, requestKey?: string) { return api<T>(path, { method: 'POST', body: JSON.stringify(data), ...(requestKey ? { headers: { 'Idempotency-Key': requestKey } } : {}) }); }

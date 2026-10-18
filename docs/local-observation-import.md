@@ -52,7 +52,7 @@ python scripts/normalize-observation-bundle.py \
 | 层 | 增量 |
 | --- | --- |
 | infra | 不新增外部服务或依赖；随包证据与锁文件可离线复核 |
-| data | LocalObservationBundleAdapter；source_imports独立表（SQLite user_version=2，旧表保留） |
+| data | LocalObservationBundleAdapter；source_imports独立表（SQLite user_version=3；source_imports于v2引入，旧表保留） |
 | business | 显式导入、SHA/版本幂等、原子保存、公共范围隔离、来源声明/地块摘要校验 |
 | API | GET /sources；POST /source-imports/public-sample；GET /source-imports/{id} |
 | UI | 管理端数据接入；现有地块记录补获取时间/空间支持/时标/单位/未知说明 |
