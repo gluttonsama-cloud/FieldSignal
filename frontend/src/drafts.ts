@@ -7,7 +7,15 @@ function db(): Promise<IDBDatabase> {
     if (!window.indexedDB) return reject(new Error('浏览器不支持本地草稿存储，请换用支持 IndexedDB 的浏览器。'));
     const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = () => request.result.createObjectStore(STORE, { keyPath: 'visit_id' });
-    request.onsuccess = () => { request.result.onversionchange = () => { request.result.close(); connection = undefined; }; resolve(request.result); };
+    request.onsuccess = () => {
+      const database=request.result, opened=connection;
+      // An unexpected browser/storage close must not poison later explicit
+      // operations. A late event from an old connection cannot clear a new one.
+      const invalidate=()=>{ if(connection===opened)connection=undefined; };
+      database.onclose=invalidate;
+      database.onversionchange=()=>{ database.close();invalidate(); };
+      resolve(database);
+    };
     request.onerror = () => { connection = undefined; reject(new Error('无法打开本地草稿，请检查浏览器存储权限。')); };
     request.onblocked = () => reject(new Error('本地草稿存储被其他窗口占用，请关闭旧窗口后重试。'));
   });
@@ -18,7 +26,8 @@ export async function listDrafts(): Promise<VerificationDraft[]> {
     const tx = database.transaction(STORE, 'readonly');
     const request = tx.objectStore(STORE).getAll();
     tx.oncomplete = () => resolve(request.result as VerificationDraft[]);
-    tx.onerror = () => reject(new Error('无法读取本地草稿。'));
+    tx.onerror = () => reject(new Error('无法读取本地草稿，请重试。'));
+    tx.onabort = () => reject(new Error('本地草稿读取被中断，请重试。'));
   });
 }
 export class DraftConflictError extends Error {}
