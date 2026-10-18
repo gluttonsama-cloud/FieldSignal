@@ -26,3 +26,5 @@
 .record-export{padding:12px 20px;border-bottom:1px solid #e7ebdf}.record-export-action{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px}.record-export-action strong{font-size:12px;overflow-wrap:anywhere}.record-export button:disabled{cursor:default}
 
 .draft-photo .draft-photo-name{font-size:11px;overflow-wrap:anywhere;color:#53664b}
+
+.visit-card .button+.button{margin-top:8px}

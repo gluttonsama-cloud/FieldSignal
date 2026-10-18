@@ -131,12 +131,31 @@ class FieldService:
                 if risk['status']=='verified': raise ServiceError(409,'risk_verified','此候选已核验，可建立无关联候选的复查任务。')
                 if c.execute('SELECT id FROM visits WHERE risk_id=? AND status=?',(payload.risk_id,'pending')).fetchone():
                     raise ServiceError(409,'duplicate_visit','此风险候选已有待完成巡田任务')
-            visit=entity('visit',**payload.model_dump(mode='json'),status='pending',data_origin=p['data_origin'])
+            visit=entity('visit',**payload.model_dump(mode='json'),status='pending',data_origin=p['data_origin'],plan_revision=0)
             self.store.insert(c,'visits',visit,parcel_id=p['id'],risk_id=payload.risk_id,status='pending')
             if payload.risk_id:
                 risk['status']='assigned';self.store.update(c,'risks',risk)
             if idempotency_key is not None:
                 self.store.insert_receipt(c,idempotency_key,'create_visit',payload.parcel_id,request_json,visit)
+            return visit
+
+    def update_visit_plan(self,visit_id,payload,idempotency_key=None):
+        request_json=self.idempotency_request(payload,idempotency_key)
+        with self.store.connect(write=True) as c:
+            visit=self.required(c,'visits',visit_id)
+            if visit['status']!='pending':
+                raise ServiceError(409,'visit_completed','巡田已完成，计划只读；请刷新任务并查看已保存核查。')
+            revision=visit.get('plan_revision',0)
+            prior=self.replay(c,idempotency_key,'update_visit_plan',visit_id,request_json)
+            if (prior is not None and prior['plan_revision']!=revision) or (prior is None and payload.expected_revision!=revision):
+                raise ServiceError(409,'visit_plan_conflict','此巡田计划已有更新，本次未覆盖。请关闭表单、刷新任务，再重新打开核对；先前请求可能已保存，不能覆盖后续计划。')
+            if prior is not None: return prior
+            visit.update(payload.model_dump(mode='json',exclude={'expected_revision'}))
+            visit['plan_revision']=revision+1
+            visit['plan_updated_at']=now_iso()
+            self.store.update(c,'visits',visit)
+            if idempotency_key is not None:
+                self.store.insert_receipt(c,idempotency_key,'update_visit_plan',visit_id,request_json,visit)
             return visit
 
     def upload_photo(self,visit_id,content_type,raw):

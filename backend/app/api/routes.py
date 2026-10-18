@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import Response
-from app.domain.models import ParcelCreate, ObservationCreate, AnalysisCreate, VisitCreate, VerificationCreate, FarmEventCreate
+from app.domain.models import ParcelCreate, ObservationCreate, AnalysisCreate, VisitCreate, VisitPlanUpdate, VerificationCreate, FarmEventCreate
 from app.application.service import ServiceError
 from app.domain.models import PublicSampleImportCreate
 from app.adapters.local_bundle import BundleError
@@ -68,6 +68,10 @@ def router(service,fixtures_enabled):
 
     @api.get('/visits')
     def visits(): return service.list('visits')
+
+    @api.post('/visits/{visit_id}/plan')
+    def update_visit_plan(visit_id:str,body:VisitPlanUpdate,idempotency_key:str|None=Depends(request_idempotency_key)):
+        return service.update_visit_plan(visit_id,body,idempotency_key)
 
     @api.post('/visits/{visit_id}/photos',status_code=201)
     async def upload_photo(visit_id:str,request:Request):

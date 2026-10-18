@@ -170,6 +170,11 @@ class VisitCreate(Contract):
     assignee: Annotated[str, Field(max_length=100)] | None = None
     note: Annotated[str, Field(max_length=2000)] | None = None
 
+class VisitPlanUpdate(Contract):
+    expected_revision: Annotated[int, Field(ge=0, strict=True)]
+    due_date: date
+    assignee: Annotated[str, Field(max_length=100)] | None = None
+
 class VerificationCreate(Contract):
     observed_at: datetime
     label: Literal['normal','waterlogging','frost','disease_suspected','other','uncertain']
