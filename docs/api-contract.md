@@ -5,7 +5,7 @@ All paths begin `/api/v1`; JSON uses snake_case. API errors return `{error: {cod
 ## Entities
 
 - Parcel: `id, name, region, crop, season, sowing_date?, cultivar?, geometry, area_ha, area_method, boundary_source, boundary_reference?, boundary_crs, data_origin, created_at`. `region`: `shayang|luotian|other`; `crop`: `oilseed_rape`. `geometry`: GeoJSON Polygon WGS84 closed ring (no holes in V0). `data_origin`: `user|fixture`; fixture parcels cannot accept actual observations.
-- Observation: `id, parcel_id, observed_at, source, source_record_id, features, quality, provenance, data_origin, observed_at, ingested_at, created_at`. `source`: `sentinel2|sentinel1|weather|manual`. Features support `ndvi, ndre, evi, ndwi, vv_db, vh_db, temperature_min_c, temperature_max_c, precipitation_mm`. Quality: `usable, valid_fraction, cloud_fraction?, flags: string[]`. Provenance: `provider, collection, item_id, processing_version, license?, source_uri?, spatial_resolution_m?, temporal_support, support_note?`. Local pre-cropped S2 TIFF/STAC and POWER JSON normalization is now supported by a separate reusable adapter; there is no automatic download or general raster-upload endpoint.
+- Observation: `id, parcel_id, observed_at, source, source_record_id, features, quality, provenance, data_origin, ingested_at, created_at`. `source`: `sentinel2|sentinel1|weather|manual`. Features support `ndvi, ndre, evi, ndwi, vv_db, vh_db, temperature_min_c, temperature_max_c, precipitation_mm`. Quality: `usable, valid_fraction, cloud_fraction?, flags: string[]`. Provenance: `provider, collection, item_id, processing_version, license?, source_uri?, spatial_resolution_m?, temporal_support, support_note?`. Local pre-cropped S2 TIFF/STAC and POWER JSON normalization is now supported by a separate reusable adapter; there is no automatic download or general raster-upload endpoint.
 - AnalysisRun: `id, parcel_id, method, evaluated_at, status, risk_id?, observation_count, message`. Status: `insufficient_data|stale|not_flagged|candidate`. `not_flagged` is not a healthy diagnosis.
 - RiskCandidate: `id, parcel_id, observation_id, method, status, priority, summary, evidence, model_version, created_at`. Status: `open|assigned|verified`; priority: `high|medium`; evidence includes actual source observation IDs, `metric, latest_value, baseline_median, baseline_mad, absolute_drop, score, baseline_count, limitations`.
 - Visit: `id, parcel_id, risk_id?, status, due_date, assignee?, note?, plan_revision?, plan_updated_at?, created_at`. Status: `pending|completed`; only verification completes it.
@@ -20,7 +20,7 @@ All paths begin `/api/v1`; JSON uses snake_case. API errors return `{error: {cod
 - POST `/parcels` body `{name, region, season, geometry, sowing_date?, cultivar?}` → Parcel
 - GET `/parcels/{id}` → Parcel
 - GET `/parcels/{id}/observations` → Observation[] sorted oldest first
-- POST `/parcels/{id}/observations` body Observation without id/parcel_id/created_at/data_origin → Observation
+- POST `/parcels/{id}/observations` body `{observed_at, source, source_record_id, features, quality, provenance}` → Observation. `id`, `parcel_id`, `data_origin`, `ingested_at` and `created_at` are response-only fields.
 - POST `/parcels/{id}/analyses` body `{method?: "statistical"|"isolation_forest"}` → AnalysisRun. Evaluates latest eligible observation; stale or low-quality data never becomes a new alert.
 - GET `/parcels/{id}/analyses` → AnalysisRun[]
 - GET `/risks` → RiskCandidate[]

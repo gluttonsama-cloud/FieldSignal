@@ -21,7 +21,7 @@
 | 地块档案 | 管理/地块；手机/地块 | name、region、crop、season、geometry、boundary_source、sowing_date | GET/POST parcels |
 | 状态总览 | 管理总览 | observation_count、data_status、latest_observed_at、data_origin | GET dashboard |
 | 历史趋势与来源 | 管理详情；手机摘要 | observed_at、ingested_at、features、quality、provenance | GET/POST parcels/:id/observations |
-| 异常候选 | 管理分析 | method、status、score、baseline_ids、model_version、limitations | POST parcels/:id/analyses；GET risks |
+| 异常候选 | 管理分析 | method、status、score、baseline_observation_ids、model_version、limitations | POST parcels/:id/analyses；GET risks |
 | 巡田优先级 | 管理分配；手机巡田 | parcel_id、risk_id、due_date、assignee、status | POST/GET visits |
 | 照片与人工核验 | 手机核验；管理记录 | label、note、photo_ids、observed_at、client_submission_id | POST visits/:id/photos；POST visits/:id/verifications |
 | 农事台账 | 手机记录；管理详情 | occurred_on、kind、note | GET/POST parcels/:id/events |
