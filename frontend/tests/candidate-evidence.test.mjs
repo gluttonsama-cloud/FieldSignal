@@ -44,6 +44,24 @@ test('routine, missing and mismatched record relationships are explicit without 
   assert.match(recordCandidate(record,[{id:'v1',parcel_id:'p1',risk_id:risk().id}],[{...risk(),parcel_id:'p2'}]).message,/候选与核查记录的地块不一致/);
 });
 
+test('pending field tasks expose their own candidate evidence before starting verification, without inventing a routine or mismatched association',async()=>{
+  const ui=setup('/field'),requests=[];
+  ui.run("visits[0].status='pending';visits[0].due_date='2026-10-18';risks[0].status='assigned'");
+  ui.context.api=async path=>{requests.push(path);return rows();};
+  const before=ui.run('JSON.stringify({visits,risks,drafts})');
+  for(const field of [true,false]){
+    const html=ui.run(`visitCard(visits[0],${field})`);
+    assert.match(html,/data-action="view-candidate-evidence" data-id="risk-&lt;old&gt;"/);assert.match(html,/查看候选依据/);
+  }
+  assert.equal(requests.length,0,'rendering a task must not fetch evidence');
+  await ui.click('view-candidate-evidence',{id:risk().id});await turn();
+  assert.deepEqual(requests,['/parcels/p1/observations']);assert.match(ui.modal.candidateObservations.innerHTML,/source-trigger/);assert.equal(ui.modal.form,undefined);
+  await ui.click('close-dialog');assert.equal(ui.run('JSON.stringify({visits,risks,drafts})'),before);
+  assert.doesNotMatch(ui.run('visitCard({...visits[0],risk_id:undefined})'),/view-candidate-evidence/);
+  assert.doesNotMatch(ui.run("visitCard({...visits[0],risk_id:'not-loaded'})"),/view-candidate-evidence/);
+  assert.doesNotMatch(ui.run("visitCard({...visits[0],parcel_id:'p2'})"),/view-candidate-evidence/);
+});
+
 test('missing or inconsistent original references remain missing, with no baseline reconstruction or cross-parcel substitution',()=>{
   const r=risk(),original=JSON.stringify(r),render=item=>`<p>EXACT ${item.id}</p>`;
   const html=candidateObservations(r,[observation('base-1'),{...observation('base-2'),parcel_id:'p2'},observation('newer-unrelated')],render);
