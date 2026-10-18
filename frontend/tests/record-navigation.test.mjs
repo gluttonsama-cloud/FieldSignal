@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import * as display from '../src/display.ts';
 import { harness, deferred, turn, verificationResult } from './helpers/ui-harness.mjs';
 
-function fieldUi() {
-  const ui=harness({pathname:'/field'}),calls=[];
+function fieldUi(pathname='/field') {
+  const ui=harness({pathname}),calls=[];
   Object.assign(ui.context,display);
   ui.context.api=async path=>{calls.push(path);return path==='/dashboard'?structuredClone(ui.run('dashboard')):path==='/health'?{}:path==='/verifications'?structuredClone(ui.run('verifications')):path==='/visits'?structuredClone(ui.run('visits')):[];};
   ui.context.uploadVerificationDraft=async draft=>verificationResult(draft);
@@ -106,4 +106,20 @@ test('another parcel never renders old farm events or accepts an older response'
   assert.match(ui.run('fieldRecords()'),/此地块农事记录尚未读取/);
   await ui.run('loadDetail()');old.resolve([{id:'old',parcel_id:'p1',note:'Wrong parcel history'}]);await done;
   assert.match(ui.app.innerHTML,/Parcel two history/);assert.doesNotMatch(ui.app.innerHTML,/Wrong parcel history/);
+});
+
+test('admin parcel details show the same read-only farm history without hiding pending or failed reads',async()=>{
+  const ui=fieldUi('/admin'),observation=deferred(),events=deferred(),calls=[];
+  ui.run("render=()=>{document.querySelector('#app').innerHTML=parcelDetail(selected());}");
+  ui.context.api=async path=>{calls.push(path);return path.endsWith('/observations')?observation.promise:path.endsWith('/events')?events.promise:[];};
+  const read=ui.run('loadDetail()');
+  assert.match(ui.app.innerHTML,/农事记录 · 当前地块/);assert.match(ui.app.innerHTML,/正在读取农事记录/);assert.doesNotMatch(ui.app.innerHTML,/暂无农事记录/);
+  events.resolve([{id:'event-p1',parcel_id:'p1',kind:'drainage',occurred_on:'2026-10-17',note:'Original drainage <record>'}]);await turn();
+  assert.match(ui.app.innerHTML,/Original drainage &lt;record&gt;/);assert.match(ui.app.innerHTML,/不作为异常成因结论/);assert.doesNotMatch(ui.app.innerHTML,/data-action="new-event"/);
+  assert.deepEqual(calls,['/parcels/p1/observations','/parcels/p1/analyses','/parcels/p1/events'],'the view adds no new network requests');
+  observation.reject(new Error('Optical read unavailable'));await read;assert.match(ui.app.innerHTML,/Original drainage &lt;record&gt;/);
+  ui.run("selectedId='p2';render()");assert.doesNotMatch(ui.app.innerHTML,/Original drainage/);assert.match(ui.app.innerHTML,/此地块农事记录尚未读取/);
+  ui.context.api=async path=>{if(path.endsWith('/events'))throw new Error('Synthetic event read failure');return [];};await ui.run('loadDetail()');
+  assert.match(ui.app.innerHTML,/农事记录未能读取.*Synthetic event read failure/);assert.doesNotMatch(ui.app.innerHTML,/暂无农事记录|Original drainage/);
+  ui.context.api=async()=>[];await ui.click('refresh-detail');assert.match(ui.app.innerHTML,/暂无农事记录/);assert.doesNotMatch(ui.app.innerHTML,/农事记录未能读取/);
 });
