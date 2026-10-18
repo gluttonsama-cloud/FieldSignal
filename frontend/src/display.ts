@@ -5,6 +5,12 @@ export const kinds: Record<string, string> = { sowing: '播种', fertilizing: '�
 export const sources: Record<string, string> = { sentinel2: 'Sentinel-2 光学', sentinel1: 'Sentinel-1 雷达', weather: '气象记录', manual: '人工录入' };
 export const statuses: Record<string, string> = { missing: '待接入数据', stale: '数据已过期', available: '有可用观测', quality_limited: '质量受限', insufficient_data: '数据不足', not_flagged: '本次未触发候选', candidate: '发现待核查候选' };
 export function esc(value: unknown): string { return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!)); }
+// Use an actual stable ID suffix, lengthened only when loaded IDs collide.
+export function shortParcelId(id: string, parcels: Pick<Parcel, 'id'>[]) {
+  let length=8;
+  while(length<id.length&&parcels.some(p=>p.id!==id&&p.id.slice(-length)===id.slice(-length)))length+=4;
+  return id.slice(-length);
+}
 export function fmtDate(value?: string) {
   if(!value)return '暂无';
   const date=new Date(value),calendarDate=/^\d{4}-\d{2}-\d{2}$/.test(value);
