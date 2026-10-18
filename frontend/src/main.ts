@@ -1,7 +1,7 @@
 import './style.css';
 import { api, post } from './api';
 import { createSourceController, renderSources, provenanceDetails, qualityDetails, featureDetails, utcTime } from './sources';
-import { listDrafts, saveDraft } from './drafts';
+import { DraftConflictError, listDrafts, saveDraft } from './drafts';
 import { uploadVerificationDraft } from './sync';
 import { regions, labels, kinds, sources, statuses, esc, fmtDate, fmtTime, today, localInput, fixture, badge, empty, boundaryMap, trend, usable } from './display';
 import type { Parcel, Observation, Analysis, Risk, Visit, Verification, FarmEvent, Dashboard, Health, VerificationDraft } from './types';
@@ -96,7 +96,7 @@ function eventModal() { const p=selected(); if(!p)return; openModal('记一笔�
 async function openVerification(visitId:string) {
   const session=++dialogSession;
   try {
-    await saving;
+    if(currentDraft)await flushDraft();else await saving;
     if(session!==dialogSession)return;
     const saved=(await listDrafts()).find(d=>d.visit_id===visitId);
     if(session!==dialogSession)return;
@@ -108,28 +108,89 @@ async function openVerification(visitId:string) {
     currentDraft=draft; verificationModal();
   } catch(error) { if(session===dialogSession)toast(msg(error)); }
 }
-function verificationModal() { const d=currentDraft!; openModal('现场核查',`<form id="verification-form"><fieldset id="verification-fields"><div class="verification-parcel"><span class="parcel-icon">▧</span><div><strong>${esc(d.parcel_name)}</strong>${fixture(d)}<small>你的观察将作为用户报告保存，不是确诊结果。</small></div></div><div class="draft-save" id="draft-save" role="status">已保存到本机 · ${esc(fmtTime(d.updated_at))}</div>${d.error?`<div class="notice warning">上次提交未完成：${esc(d.error)}<br>草稿与照片仍在，点击下方按钮手动重试。</div>`:''}<label>现场观察时间<input name="observed_at" type="datetime-local" value="${localInput(d.observed_at)}" required></label><span class="label-title" id="observation-label">看到什么情况？</span><div class="label-options" role="group" aria-labelledby="observation-label">${Object.entries(labels).map(([v,t])=>`<label class="radio-option"><input type="radio" name="label" value="${v}" ${d.label===v?'checked':''}><span>${t}</span></label>`).join('')}</div><label>现场备注<textarea name="note" rows="4" maxlength="2000" required placeholder="记录叶片、土壤、积水范围等所见现象。">${esc(d.note)}</textarea></label><div class="photo-heading"><span class="label-title">现场照片 <small>选填</small></span><span class="subtle" id="photo-count">${d.photos.length} 张</span></div><div class="photo-picker"><label class="button secondary">拍照 / 选择照片<input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p class="caption">JPG、PNG、WebP，最多 8 张，每张最多 10 MB、1600 万像素。照片会随草稿保存在当前浏览器，仅在你提交时上传至本地服务。</p></div><div id="draft-photos" class="draft-photos"></div><p class="caption" id="no-photo">${d.photos.length?'':'当前未附现场照片，仍可提交核查。'}</p><div class="notice subtle-notice">离线时可继续填写并保存草稿。不会自动后台上传；不要在提交前清理浏览器数据。</div><div class="dialog-actions"><button type="button" class="button secondary" data-action="save-close">保存并返回</button><button type="submit" class="button primary">${d.state==='error'||d.state==='pending_upload'?'重试提交核查':'提交核查'}</button></div></fieldset></form>`); renderDraftPhotos(); }
+function verificationModal() { const d=currentDraft!; openModal('现场核查',`<form id="verification-form"><fieldset id="verification-fields"><div class="verification-parcel"><span class="parcel-icon">▧</span><div><strong>${esc(d.parcel_name)}</strong>${fixture(d)}<small>你的观察将作为用户报告保存，不是确诊结果。</small></div></div><div class="draft-save" id="draft-save" role="status">已保存到本机 · ${esc(fmtTime(d.updated_at))}</div><button type="button" id="retry-draft-save" class="text-button" data-action="retry-draft-save" hidden>重试保存到本机</button>${d.error?`<div class="notice warning">上次提交未完成：${esc(d.error)}<br>草稿与照片仍在，点击下方按钮手动重试。</div>`:''}<label>现场观察时间<input name="observed_at" type="datetime-local" value="${localInput(d.observed_at)}" required></label><span class="label-title" id="observation-label">看到什么情况？</span><div class="label-options" role="group" aria-labelledby="observation-label">${Object.entries(labels).map(([v,t])=>`<label class="radio-option"><input type="radio" name="label" value="${v}" ${d.label===v?'checked':''}><span>${t}</span></label>`).join('')}</div><label>现场备注<textarea name="note" rows="4" maxlength="2000" required placeholder="记录叶片、土壤、积水范围等所见现象。">${esc(d.note)}</textarea></label><div class="photo-heading"><span class="label-title">现场照片 <small>选填</small></span><span class="subtle" id="photo-count">${d.photos.length} 张</span></div><div class="photo-picker"><label class="button secondary">拍照 / 选择照片<input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p class="caption">JPG、PNG、WebP，最多 8 张，每张最多 10 MB、1600 万像素。照片会随草稿保存在当前浏览器，仅在你提交时上传至本地服务。</p></div><div id="draft-photos" class="draft-photos"></div><p class="caption" id="no-photo">${d.photos.length?'':'当前未附现场照片，仍可提交核查。'}</p><div class="notice subtle-notice">离线时可继续填写并保存草稿。不会自动后台上传；不要在提交前清理浏览器数据。</div><div class="dialog-actions"><button type="button" class="button secondary" data-action="save-close">保存并返回</button><button type="submit" class="button primary">${d.state==='error'||d.state==='pending_upload'?'重试提交核查':'提交核查'}</button></div></fieldset></form>`); renderDraftPhotos(); }
 function renderDraftPhotos() { revokePhotos(); const d=currentDraft; const container=modal.querySelector('#draft-photos'); if(!d||!container)return; container.innerHTML=d.photos.map(p=>{ const url=URL.createObjectURL(p.blob);photoUrls.push(url);return `<div class="draft-photo"><img src="${url}" alt="待提交现场照片 ${esc(p.name)}"><button type="button" data-action="remove-photo" data-id="${esc(p.key)}" aria-label="移除照片 ${esc(p.name)}">×</button><small>${p.uploaded_id?'已上传 · 等待核查提交':`${(p.blob.size/1024/1024).toFixed(1)} MB`}</small></div>`; }).join(''); const count=modal.querySelector('#photo-count');if(count)count.textContent=`${d.photos.length} 张`;const none=modal.querySelector('#no-photo');if(none)none.textContent=d.photos.length?'':'当前未附现场照片，仍可提交核查。'; }
-function queueSave() { if(!currentDraft)return Promise.resolve(); currentDraft.updated_at=new Date().toISOString(); currentDraft.state='draft';currentDraft.error=undefined;const snapshot=structuredClone(currentDraft);const session=dialogSession;const status=modal.querySelector('#draft-save');if(status)status.textContent='正在保存到本机…';saving=saving.catch(()=>{}).then(async()=>{if(currentDraft?.client_submission_id===snapshot.client_submission_id)snapshot.revision=currentDraft.revision;await saveDraft(snapshot);if(currentDraft?.client_submission_id===snapshot.client_submission_id)currentDraft.revision=snapshot.revision;});saving.then(()=>{if(modal.open&&session===dialogSession&&currentDraft?.visit_id===snapshot.visit_id){const el=modal.querySelector('#draft-save');if(el)el.textContent=`已保存到本机 · ${fmtTime(snapshot.updated_at)}`;}},error=>{storageError=msg(error);if(session===dialogSession){const el=modal.querySelector('#draft-save');if(el)el.textContent=storageError;}});return saving; }
-async function submitVerification() { if(!currentDraft||submitting)return; submitting=true;const d=currentDraft;const fields=modal.querySelector<HTMLFieldSetElement>('#verification-fields');if(fields)fields.disabled=true;
-  try { await saving; d.state='pending_upload';d.error=undefined;await saveDraft(d);const status=modal.querySelector('#draft-save');if(status)status.textContent='正在上传至本地服务，请勿关闭…';
+function showDraftSaveFailure(error: unknown) {
+  storageError=msg(error);
+  const el=modal.querySelector('#draft-save');
+  if(el)el.textContent=`${storageError} 当前编辑尚未确认保存，请保留此页面；备注和照片仍在当前页面中。`;
+  const button=modal.querySelector<HTMLButtonElement>('#retry-draft-save');
+  if(button){button.hidden=error instanceof DraftConflictError;button.disabled=false;}
+}
+function queueSave() {
+  if(!currentDraft)return Promise.resolve();
+  currentDraft.updated_at=new Date().toISOString();currentDraft.state='draft';currentDraft.error=undefined;
+  const snapshot=structuredClone(currentDraft),session=dialogSession;
+  const status=modal.querySelector('#draft-save'),retry=modal.querySelector<HTMLButtonElement>('#retry-draft-save');
+  if(status)status.textContent='正在保存到本机…';
+  if(retry){retry.hidden=true;retry.disabled=true;}
+  const task=saving.catch(()=>{}).then(async()=>{
+    if(currentDraft?.client_submission_id===snapshot.client_submission_id)snapshot.revision=currentDraft.revision;
+    await saveDraft(snapshot);
+    if(currentDraft?.client_submission_id===snapshot.client_submission_id)currentDraft.revision=snapshot.revision;
+  });
+  saving=task;
+  task.then(()=>{
+    if(task!==saving)return;
+    storageError='';
+    if(modal.open&&session===dialogSession&&currentDraft?.visit_id===snapshot.visit_id){
+      const el=modal.querySelector('#draft-save');if(el)el.textContent=`已保存到本机 · ${fmtTime(snapshot.updated_at)}`;
+    }
+  },error=>{
+    if(task!==saving)return;
+    storageError=msg(error);
+    if(session===dialogSession)showDraftSaveFailure(error);
+  });
+  return task;
+}
+async function flushDraft() {
+  let task=currentDraft?queueSave():saving;
+  // Keep the dialog open until edits queued while saving are also acknowledged.
+  for(;;){await task;if(task===saving)return;task=saving;}
+}
+async function submitVerification() {
+  if(!currentDraft||submitting)return;
+  submitting=true;const d=currentDraft;let uploadStarted=false;
+  const fields=modal.querySelector<HTMLFieldSetElement>('#verification-fields');if(fields)fields.disabled=true;
+  try {
+    await flushDraft();
+    d.state='pending_upload';d.error=undefined;await saveDraft(d);
+    uploadStarted=true;
+    const status=modal.querySelector('#draft-save');if(status)status.textContent='正在上传至本地服务，请勿关闭…';
     await uploadVerificationDraft(d);currentDraft=undefined;closeModal();toast('核查已保存，巡田任务已完成。');await refresh();
-  } catch(error) { d.state='error';d.error=msg(error);try{await saveDraft(d);}catch(storage){d.error+=` ${msg(storage)}`;} formError(`${d.error} 草稿和照片未删除。`);const status=modal.querySelector('#draft-save');if(status)status.textContent=d.error.includes('提交已确认')?'服务端已确认提交 · 本机新版草稿已保留，请先查看记录':'提交未完成 · 请检查连接后手动重试'; const submit=modal.querySelector<HTMLButtonElement>('button[type="submit"]');if(submit)submit.textContent='重试提交核查';renderDraftPhotos(); }
-  finally {submitting=false;if(fields)fields.disabled=false;}
+  } catch(error) {
+    d.state='error';d.error=msg(error);
+    if(!uploadStarted){
+      showDraftSaveFailure(error);
+      formError(`${d.error} 本次尚未发送核查，请先保存当前编辑。`);
+    } else {
+      let saveError: unknown;
+      try{await saveDraft(d);}catch(storage){saveError=storage;d.error+=` ${msg(storage)}`;}
+      formError(`${d.error} 草稿和照片未删除。`);
+      if(saveError)showDraftSaveFailure(saveError);
+      else {
+        const status=modal.querySelector('#draft-save');
+        if(status)status.textContent=d.error.includes('提交已确认')?'服务端已确认提交 · 本机新版草稿已保留，请先查看记录':'草稿已保存在本机 · 提交未完成，请手动重试';
+      }
+    }
+    const submit=modal.querySelector<HTMLButtonElement>('button[type="submit"]');if(submit)submit.textContent='重试提交核查';
+    renderDraftPhotos();
+  } finally {submitting=false;if(fields)fields.disabled=false;}
 }
 
 app.addEventListener('change',async event=>{const target=event.target as HTMLSelectElement;if(target.id==='region-filter'){++dialogSession;region=target.value;const list=shownParcels();if(!list.some(p=>p.id===selectedId)){selectedId=list[0]?.id||'';await loadDetail();}render();}if(target.id==='parcel-picker'){++dialogSession;selectedId=target.value;await loadDetail();render();}});
 document.addEventListener('click',async event=>{ const button=(event.target as Element).closest<HTMLElement>('[data-action]');if(!button)return;const action=button.dataset.action,id=button.dataset.id||'';const actionSession=dialogSession;
   try { if(action==='refresh')return await refresh(); if(action==='admin-tab'){++dialogSession;adminTab=button.dataset.tab!;render();if(adminTab==='sources')await sourceController.refresh();} if(action==='refresh-sources')return await sourceController.refresh(); if(action==='import-public-sample')return await sourceController.importSample(); if(action==='field-tab'){++dialogSession;fieldTab=button.dataset.tab!;render();window.scrollTo({top:0});} if(action==='select-parcel'){++dialogSession;selectedId=id;await loadDetail();render();}
     if(action==='new-parcel')parcelModal();if(action==='import-observation')observationModal();if(action==='new-visit')visitModal(id);if(action==='new-event')eventModal();if(action==='verify'||action==='resume-draft')await openVerification(id);
-    if(action==='close-dialog'||action==='save-close'){if(submitting)return;const session=++dialogSession;await saving;if(session!==dialogSession)return;closeModal();currentDraft=undefined;drafts=await listDrafts();render();}
+    if(action==='close-dialog'||action==='save-close'){if(submitting)return;const session=++dialogSession;await flushDraft();if(session!==dialogSession)return;closeModal();currentDraft=undefined;drafts=await listDrafts();render();}
+    if(action==='retry-draft-save'&&currentDraft&&!submitting){if((button as HTMLButtonElement).disabled)return;await flushDraft();if(actionSession===dialogSession){const error=modal.querySelector<HTMLElement>('.form-error');if(error)error.hidden=true;renderDraftPhotos();toast('草稿已重新保存到本机。');}}
     if(action==='remove-photo'&&currentDraft&&!submitting){const removed=currentDraft.photos.find(p=>p.key===id);if(removed?.uploaded_id)currentDraft.pending_delete_photo_ids=[...(currentDraft.pending_delete_photo_ids||[]),removed.uploaded_id];currentDraft.photos=currentDraft.photos.filter(p=>p.key!==id);await queueSave();renderDraftPhotos();}
     if(action==='analyze'&&selectedId){(button as HTMLButtonElement).disabled=true;button.textContent='正在分析…';const result=await post<Analysis>(`/parcels/${encodeURIComponent(selectedId)}/analyses`,{method:'statistical'});toast(`${statuses[result.status]||result.status}：${result.message}`);await refresh();}
     if(action==='load-fixtures'){openModal('加载开发模拟数据',`<p class="form-intro">将创建一个明确标记为「开发模拟数据」的地块及模拟观测，用于验证流程。模拟数据不代表实际农情，也不作为真实标签。</p><div class="dialog-actions"><button class="button secondary" data-action="close-dialog">取消</button><button class="button primary" data-action="confirm-fixtures">确认加载模拟数据</button></div>`);}
     if(action==='confirm-fixtures'){if((button as HTMLButtonElement).disabled)return;const session=dialogSession;(button as HTMLButtonElement).disabled=true;const result=await post<{created:boolean;parcel_id:string}>('/dev/fixtures',{});if(session===dialogSession){selectedId=result.parcel_id;closeModal();}toast(result.created?'开发模拟数据已加载。':'已有开发模拟数据，已定位该地块。');await refresh();}
   } catch(error){if(modal.open&&actionSession===dialogSession)formError(msg(error));else toast(msg(error));if(button instanceof HTMLButtonElement)button.disabled=false;if(action==='analyze')button.textContent='运行统计分析';}
 });
-modal.addEventListener('cancel',event=>{if(submitting){event.preventDefault();return;}const session=++dialogSession;if(currentDraft){event.preventDefault();void saving.then(async()=>{if(session!==dialogSession)return;closeModal();currentDraft=undefined;drafts=await listDrafts();render();}).catch(e=>{if(session===dialogSession)formError(msg(e));});}});
+modal.addEventListener('cancel',event=>{if(submitting){event.preventDefault();return;}const session=++dialogSession;if(currentDraft){event.preventDefault();void flushDraft().then(async()=>{if(session!==dialogSession)return;closeModal();currentDraft=undefined;drafts=await listDrafts();render();}).catch(e=>{if(session===dialogSession)formError(msg(e));});}});
 modal.addEventListener('close',()=>{if(!modal.open){currentDraft=undefined;revokePhotos();}});
 modal.addEventListener('input',event=>{const input=event.target as HTMLInputElement|HTMLTextAreaElement;if(!currentDraft||submitting||!input.closest('#verification-form'))return;if(input.name==='note')currentDraft.note=input.value;if(input.name==='label')currentDraft.label=input.value;if(input.name==='observed_at'&&input.value&&!Number.isNaN(+new Date(input.value)))currentDraft.observed_at=new Date(input.value).toISOString();void queueSave();});
 modal.addEventListener('change',async event=>{const input=event.target as HTMLInputElement;const changeSession=dialogSession;try{if(input.id==='observation-file'&&input.files?.[0]){const file=input.files[0];if(file.size>1024*1024)throw new Error('单条 JSON 文件请小于 1 MB。');const session=dialogSession;const text=await file.text();if(session!==dialogSession)return;JSON.parse(text);modal.querySelector<HTMLTextAreaElement>('textarea[name="json"]')!.value=text;}if(input.id==='photo-input'&&input.files&&currentDraft&&!submitting){const files=Array.from(input.files);if(currentDraft.photos.length+files.length>8)throw new Error('每次核查最多 8 张照片，请减少所选照片。');for(const file of files){if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('仅支持 JPG、PNG 或 WebP 照片。');if(file.size>10*1024*1024)throw new Error(`照片 ${file.name} 超过 10 MB，请选择较小照片。`);}for(const file of files)currentDraft.photos.push({key:crypto.randomUUID(),blob:file,name:file.name});await queueSave();renderDraftPhotos();input.value='';}}catch(error){if(changeSession===dialogSession)formError(msg(error));else toast(`先前表单处理未完成：${msg(error)}`);}});
