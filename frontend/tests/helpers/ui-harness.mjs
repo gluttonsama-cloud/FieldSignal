@@ -15,7 +15,7 @@ export const deferred = () => {
 };
 export const turn = () => new Promise(resolve => setImmediate(resolve));
 
-export function harness() {
+export function harness({ pathname = '/admin' } = {}) {
   class Button {
     disabled = false;
     textContent = '';
@@ -73,7 +73,7 @@ export function harness() {
   };
   const window = { listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; }, scrollTo() {} };
   const context = vm.createContext({
-    document, location: { pathname: '/admin' }, navigator: { onLine: true },
+    document, location: { pathname }, navigator: { onLine: true },
     window,
     createSourceController: () => ({ refresh: async () => {} }),
     listDrafts: async () => [], saveDraft: async draft => { draft.revision = (draft.revision || 0) + 1; },
@@ -87,7 +87,7 @@ export function harness() {
     dashboard.parcels=[{id:'p1',name:'Parcel one',data_origin:'user'},{id:'p2',name:'Parcel two',data_origin:'user'}];
     visits=[{id:'v1',parcel_id:'p1'},{id:'v2',parcel_id:'p2'}]; selectedId='p1';`, context);
   return {
-    context, modal, toast, window,
+    context, app, modal, toast, window,
     run: code => vm.runInContext(code, context),
     click: (action, dataset = {}) => document.listeners.click({ target: { closest: () => action === 'retry-draft-save' && modal.retrySave ? modal.retrySave : new Button({ action, ...dataset }) } }),
     submit(form = modal.form) { return modal.listeners.submit({ target: form, preventDefault() {} }); },
