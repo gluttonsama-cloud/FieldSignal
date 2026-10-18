@@ -20,6 +20,8 @@ bash scripts/run-local.sh
 
 检查：`bash scripts/check.sh`。前端开发时在 `frontend` 运行 `npm run dev`，代理本机8000端口。
 
+服务端数据备份：先准备仓库外的私有目录，再显式运行 `python scripts/backup-local.py --database backend/var/fieldsignal.sqlite3 --output ../private-backups/fieldsignal-20261018.sqlite3`。若使用 `FIELDSIGNAL_DB`，请改为实际数据库路径。命令通过 SQLite backup API 获取包含已提交 WAL 内容的一致快照，校验后生成新的单文件，不覆盖已有目标、不迁移或恢复运行库。备份包含服务端记录与照片 BLOB，不含浏览器未提交草稿或原始导入文件；CSV 和源码包不能代替它。备份未加密，请保留在私有位置，不要上传仓库或外发。
+
 ## 已实现与边界
 
 - 地块边界校验、来源/质量/时效/入库时间、观测去重、农事记录与可追溯闭环
