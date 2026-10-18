@@ -45,6 +45,8 @@ python scripts/normalize-observation-bundle.py \
 
 输出包含可复用ObservationCreate数组、bundle摘要、版本与限制。拒绝覆盖已有输出，也拒绝把输出写回输入证据目录。不同本地STAC item/日期测试已通过；没有把3天气象当成3期光学观测。
 
+在管理端或田间助手的地块详情，可点击「下载边界 GeoJSON」取回当前已加载用户地块的 Polygon，用于下述 `--parcel-geometry`。文件只含 type/coordinates，保留坐标顺序、数值与闭合点，不含地块名称或其他记录；含地理坐标，请保存在私有位置。仅用户点击后在本机下载，不外发，不生成mask或认证位置/权属；开发模拟地块不提供此入口。
+
 合法取得的真实地块文件使用scope=parcel、对应mask与边界摘要后，加`--parcel-geometry /path/to/polygon.json`验证摘要。在管理端「导入真实地块观测」选择规范化输出 JSON（1 MiB 内），明确选择一条记录，核对固定目标地块、来源、时间、质量与边界/掩膜摘要后提交。选择文件不上传，不会默认选中或批量导入；其余记录需重新打开表单并选择文件。仍兼容单条 JSON 与已有POST /parcels/{id}/observations接口。界面仅检查结构与显式范围，不独立认证文件声明；批次摘要指原 manifest，不是输出 JSON 的摘要。服务校验当前地块边界摘要、生长季；光学还要求parcel空间支持与parcel_mask_sha256在资产摘要中的对应绑定；错误地块或缺失绑定拒绝。当前逐条导入，不宣称提供通用任意文件上传、原子地块批量导入或自动遥感裁切。
 
 ## 存储和API

@@ -7,6 +7,7 @@ import { recordPhotoStrip, recordPhotoViewer, bindRecordPhotoEvents, retryRecord
 import { shortParcelId } from '../../src/display.ts';
 import { verificationNoteError } from '../../src/sync.ts';
 import { recordCandidate, candidateSnapshot, candidateObservations } from '../../src/candidate-evidence.ts';
+import { parcelBoundaryFile, downloadParcelBoundary } from '../../src/parcel-export.ts';
 import { ApiError } from '../../src/api.ts';
 import { DraftConflictError } from '../../src/drafts.ts';
 
@@ -90,7 +91,7 @@ export function harness({ pathname = '/admin' } = {}) {
     listDrafts: async () => [], saveDraft: async draft => { draft.revision = (draft.revision || 0) + 1; },
     parseObservationInput, observationImportSummary, parseParcelGeometry, parcelGeometrySummary,
     recordPhotoStrip, recordPhotoViewer, bindRecordPhotoEvents, retryRecordPhoto, zoomRecordPhoto,
-    recordCandidate, candidateSnapshot, candidateObservations,
+    recordCandidate, candidateSnapshot, candidateObservations, parcelBoundaryFile, downloadParcelBoundary,
     post: async () => ({}), DraftConflictError, ApiError, crypto, structuredClone, URL, Date, Error, SyntaxError, Promise,
     setTimeout() {}, HTMLButtonElement: Button,
     FormData: class { constructor(form) { this.form = form; } get(key) { return this.form.values[key]; } },
