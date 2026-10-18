@@ -1,5 +1,7 @@
 import './style.css';
 import { api, post, ApiError } from './api';
+import { parseObservationInput, observationImportSummary } from './observation-import';
+import type { ObservationBundle } from './observation-import';
 import { createSourceController, renderSources, provenanceDetails, qualityDetails, featureDetails, utcTime } from './sources';
 import { DraftConflictError, listDrafts, saveDraft } from './drafts';
 import { uploadVerificationDraft } from './sync';
@@ -44,39 +46,71 @@ function postRecord<T>(form: HTMLFormElement, path: string, data: unknown) {
 }
 
 const observationReads = new WeakMap<HTMLFormElement, object>();
+const observationBundles = new WeakMap<HTMLFormElement, { bundle: ObservationBundle; selected?: number }>();
+function clearObservationBundle(form: HTMLFormElement) {
+  observationBundles.delete(form);
+  const choices=form.querySelector<HTMLElement>('#observation-choices');if(choices){choices.hidden=true;choices.innerHTML='';}
+}
+function previewObservation(form: HTMLFormElement) {
+  const preview=form.querySelector<HTMLElement>('#observation-preview');if(!preview)return;
+  try { const parsed=parseObservationInput(form.querySelector<HTMLTextAreaElement>('textarea[name="json"]')!.value);preview.textContent=parsed.kind==='single'?observationImportSummary(parsed.record):'请从 JSON 文件读取规范化结果，再明确选择一条记录。'; }
+  catch { preview.textContent='当前 JSON 尚不能预览，请检查内容后再提交。'; }
+}
+function selectObservation(input: HTMLSelectElement) {
+  const form=input.closest<HTMLFormElement>('#observation-form');
+  if(!form||form.dataset.submitting==='true'||!modal.contains(form)||!modal.open)return;
+  const state=observationBundles.get(form);if(!state)return;
+  const index=/^\d+$/.test(input.value)?Number(input.value):-1;
+  state.selected=index>=0&&index<state.bundle.observations.length?index:undefined;
+  const submit=form.querySelector<HTMLButtonElement>('[type="submit"]')!;submit.disabled=state.selected===undefined;
+  if(state.selected===undefined){const preview=form.querySelector<HTMLElement>('#observation-preview');if(preview)preview.textContent='尚未选择记录，不能提交；下方 JSON 保留上次内容。';observationReadStatus(form,'请明确选择一条记录；尚未发送任何观测。');return;}
+  form.querySelector<HTMLTextAreaElement>('textarea[name="json"]')!.value=JSON.stringify(state.bundle.observations[index],null,2);
+  previewObservation(form);
+  const error=modal.querySelector<HTMLElement>('.form-error');if(error)error.hidden=true;
+  observationReadStatus(form,`已选择第 ${index+1} / ${state.bundle.observations.length} 条；仅在点击「校验并导入」时提交这一条。`);
+}
 function observationReadStatus(form: HTMLFormElement, text: string) {
   const status=form.querySelector<HTMLElement>('#observation-file-status');if(status)status.textContent=text;
 }
 function editObservationJson(input: HTMLInputElement|HTMLTextAreaElement) {
   const form=input.closest<HTMLFormElement>('#observation-form');
   if(input.name!=='json'||!form||form.dataset.submitting==='true')return;
-  observationReads.delete(form);
+  observationReads.delete(form);clearObservationBundle(form);previewObservation(form);
   const submit=form.querySelector<HTMLButtonElement>('[type="submit"]');if(submit)submit.disabled=false;
   observationReadStatus(form,'已改为手动输入，请核对后提交；先前文件读取不会覆盖当前内容。');
 }
 async function readObservationFile(input: HTMLInputElement) {
   const form=input.closest<HTMLFormElement>('#observation-form');
   if(!form||form.dataset.submitting==='true')return;
-  const token={},session=dialogSession;observationReads.set(form,token);
+  const token={},session=dialogSession;observationReads.set(form,token);clearObservationBundle(form);
   const current=()=>modal.open&&session===dialogSession&&modal.contains(form)&&observationReads.get(form)===token;
   const submit=form.querySelector<HTMLButtonElement>('[type="submit"]')!;
   const file=input.files?.[0];submit.disabled=Boolean(file);
   if(!file){observationReads.delete(form);observationReadStatus(form,'未选择文件，当前 JSON 保持不变。');return;}
   observationReadStatus(form,'正在读取所选文件，请稍候；手动编辑 JSON 可取消本次读取。');
   try {
-    if(file.size>1024*1024)throw new Error('单条 JSON 文件请小于 1 MB。');
+    if(file.size>1024*1024)throw new Error('JSON 文件请小于 1 MB。');
     const text=await file.text();if(!current())return;
-    const value=JSON.parse(text);
-    if(!value||Array.isArray(value)||typeof value!=='object')throw new Error('请提供单条观测 JSON 对象。');
-    form.querySelector<HTMLTextAreaElement>('textarea[name="json"]')!.value=text;
-    observationReadStatus(form,`已读取 ${file.name}，请核对来源与时间后提交。`);
+    const parsed=parseObservationInput(text);
+    if(parsed.kind==='bundle'){
+      const bundle=parsed.bundle;observationBundles.set(form,{bundle});
+      const choices=form.querySelector<HTMLElement>('#observation-choices')!;choices.hidden=false;
+      choices.innerHTML=`<label>选择一条观测（共 ${bundle.observations.length} 条）<select id="observation-record"><option value="">请选择，不会自动导入</option>${bundle.observations.map((record,index)=>`<option value="${index}">${index+1} · ${esc(record.source||'来源未知')} · ${esc(record.observed_at||'时间未知')} · ${esc(record.source_record_id||'记录未知')}</option>`).join('')}</select></label><p class="caption">批次 ${esc(bundle.bundle_id)} · 处理版本 ${esc(bundle.processing_version)}<br>原始 manifest SHA-256：${esc(bundle.bundle_sha256)}（文件声明，非本次重新计算）</p>${bundle.limitations.length?`<ul class="source-limitations">${bundle.limitations.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>`:''}`;
+      const preview=form.querySelector<HTMLElement>('#observation-preview');if(preview)preview.textContent='请先选择一条记录，再核对来源、时间、质量与地块绑定。';
+      observationReadStatus(form,`已读取 ${file.name}，共 ${bundle.observations.length} 条。选择一条后可预览；本次只导入所选记录。`);
+    }else{
+      form.querySelector<HTMLTextAreaElement>('textarea[name="json"]')!.value=text;previewObservation(form);
+      observationReadStatus(form,`已读取 ${file.name}，请核对来源与时间后提交。`);
+    }
     const error=modal.querySelector<HTMLElement>('.form-error');if(error)error.hidden=true;
   } catch(error) {
     if(current()){observationReadStatus(form,'文件未读入，原有 JSON 已保留；请检查内容后再提交。');formError(error instanceof SyntaxError?'JSON 格式不正确，请检查文件内容。':msg(error));}
   } finally {
-    if(observationReads.get(form)===token){observationReads.delete(form);submit.disabled=form.dataset.submitting==='true';}
+    if(observationReads.get(form)===token){observationReads.delete(form);submit.disabled=form.dataset.submitting==='true'||(observationBundles.has(form)&&observationBundles.get(form)!.selected===undefined);}
   }
 }
+
+function singleObservation(text: string) { const parsed=parseObservationInput(text);if(parsed.kind!=='single')throw new Error('请从 JSON 文件读取规范化结果，并明确选择一条观测。');return parsed.record; }
 
 function toast(text: string) { const element = document.querySelector<HTMLElement>('#toast')!; element.textContent = text; element.classList.add('visible'); setTimeout(() => element.classList.remove('visible'), 4800); }
 function formError(text: string) { const el=modal.querySelector<HTMLElement>('.form-error'); if(el) { el.textContent=text; el.hidden=false; el.focus(); } else toast(text); }
@@ -148,7 +182,7 @@ function closeModal() { ++dialogSession; storedDraftView=undefined; modal.close(
 function openModal(title: string, body: string, wide=false) { ++dialogSession; revokePhotos(); modal.className=wide?'wide':''; modal.innerHTML=`<div class="dialog-head"><div><div class="eyebrow">FIELDSIGNAL</div><h2 id="dialog-title">${title}</h2></div><button class="icon-button" data-action="close-dialog" aria-label="关闭对话框">×</button></div><div class="form-error notice danger" role="alert" tabindex="-1" hidden></div>${body}`; if(!modal.open) modal.showModal(); }
 function revokePhotos() { photoUrls.forEach(URL.revokeObjectURL); photoUrls=[]; }
 function parcelModal() { openModal('录入地块',`<form id="parcel-form"><p class="form-intro">录入真实地块档案。边界仅发送至本地服务，不加载外部地图。</p><div class="form-grid"><label>地块名称<input name="name" required maxlength="80" placeholder="例如：北侧一号田"></label><label>所属区域<select name="region">${Object.entries(regions).map(([v,t])=>`<option value="${v}">${t}</option>`).join('')}</select></label><label>种植季<input name="season" required maxlength="40" placeholder="例如：2026-2027"></label><label>播种日期（选填）<input name="sowing_date" type="date"></label></div><label>品种（选填）<input name="cultivar" maxlength="100"></label><label>地块边界 · GeoJSON Polygon<textarea name="geometry" required rows="8" spellcheck="false" placeholder='{"type":"Polygon","coordinates":[[[经度,纬度], … , [首点经度,首点纬度]]]}'></textarea></label><p class="caption">使用 WGS84 经度、纬度顺序；首尾坐标一致；V0 不支持内环。也可粘贴单个 Feature，系统会读取 geometry。</p><p class="caption">请求中断可在此表单原样重试；改内容或重开表单前，请先确认原记录是否已保存。</p><div class="dialog-actions"><button type="button" class="button secondary" data-action="close-dialog">取消</button><button type="submit" class="button primary">保存地块</button></div></form>`,true); }
-function observationModal() { const p=selected(); if(!p||p.data_origin==='fixture')return; const sample={observed_at:new Date().toISOString(),source:'manual',source_record_id:'',features:{ndvi:null},quality:{usable:false,valid_fraction:0,flags:['待检查']},provenance:{provider:'',collection:'',item_id:'',processing_version:''}}; openModal('导入真实地块观测',`<form id="observation-form" data-parcel="${esc(p.id)}"><p class="form-intro">${esc(p.name)} · 高级录入。此入口接收单条已处理特征，不直接接收影像文件。请提供可追溯的真实来源与质量信息。提交的来源与质量声明尚未独立核验；未知信息请保留缺失，不能填零或猜测。</p><fieldset id="observation-fields"><label class="file-label">从 JSON 文件读取<input id="observation-file" type="file" accept="application/json,.json"></label><p class="caption" id="observation-file-status" role="status">选择文件只读取到当前表单，核对后再手动导入。</p><label>单条观测 JSON<textarea name="json" rows="17" spellcheck="false" required>${esc(JSON.stringify(sample,null,2))}</textarea></label><p class="caption">请填写特征、来源记录与处理版本；不要将示例或猜测值当作真实观测。</p></fieldset><div class="dialog-actions"><button type="button" class="button secondary" data-action="close-dialog">取消</button><button type="submit" class="button primary">校验并导入</button></div></form>`,true); }
+function observationModal() { const p=selected(); if(!p||p.data_origin==='fixture')return; const sample={observed_at:new Date().toISOString(),source:'manual',source_record_id:'',features:{ndvi:null},quality:{usable:false,valid_fraction:0,flags:['待检查']},provenance:{provider:'',collection:'',item_id:'',processing_version:''}}; openModal('导入真实地块观测',`<form id="observation-form" data-parcel="${esc(p.id)}"><p class="form-intro">${esc(p.name)} · 地块 ${esc(p.id)} · 种植季 ${esc(p.season)}<br>高级录入。此入口接收单条已处理特征，不直接接收影像文件。请提供可追溯的真实来源与质量信息。提交的来源与质量声明尚未独立核验；未知信息请保留缺失，不能填零或猜测。</p><fieldset id="observation-fields"><label class="file-label">从 JSON 文件读取<input id="observation-file" type="file" accept="application/json,.json"></label><p class="caption" id="observation-file-status" role="status">支持单条观测或本地规范化脚本输出（1 MB 内）。选择文件不上传；规范化文件需明确选择一条记录。本次导入完成后，如需其他记录请重新打开并选择文件。</p><div id="observation-choices" class="observation-selection" hidden></div><pre id="observation-preview" class="observation-selection" aria-label="待导入观测核对">选择记录后显示来源、时间、质量和地块绑定；文件声明尚未独立核验。</pre><label>单条观测 JSON<textarea name="json" rows="17" spellcheck="false" required>${esc(JSON.stringify(sample,null,2))}</textarea></label><p class="caption">请填写特征、来源记录与处理版本；不要将示例或猜测值当作真实观测。</p></fieldset><div class="dialog-actions"><button type="button" class="button secondary" data-action="close-dialog">取消</button><button type="submit" class="button primary">校验并导入</button></div></form>`,true); }
 function visitModal(riskId:string) { const r=risks.find(r=>r.id===riskId); if(!r)return; const p=parcelFor(r.parcel_id); openModal('安排田间核查',`<form id="visit-form" data-risk="${esc(r.id)}"><p class="form-intro">${esc(p?.name||r.parcel_id)} ${fixture(p)}<br>${esc(r.summary)}</p><label>计划巡田日期<input name="due_date" type="date" value="${today()}" required></label><label>执行人（选填）<input name="assignee" maxlength="100" placeholder="姓名或工作代号"></label><label>核查提示（选填）<textarea name="note" rows="3" maxlength="2000" placeholder="建议查看的位置、需要记录的现象…"></textarea></label><div class="notice">任务仅保存到本地，系统不会发送短信或推送通知。</div><div class="dialog-actions"><button type="button" class="button secondary" data-action="close-dialog">取消</button><button type="submit" class="button primary">创建巡田任务</button></div></form>`); }
 function eventModal() { const p=selected(); if(!p)return; openModal('记一笔农事',`<form id="event-form" data-parcel="${esc(p.id)}"><p class="form-intro">${esc(p.name)} ${fixture(p)}</p><div class="form-grid"><label>日期<input type="date" name="occurred_on" value="${today()}" required></label><label>农事类型<select name="kind">${Object.entries(kinds).map(([v,t])=>`<option value="${v}">${t}</option>`).join('')}</select></label></div><label>记录内容<textarea name="note" rows="5" maxlength="2000" required placeholder="记录做了什么、现场情况，以及需要留意的事项。"></textarea></label><p class="caption">农事记录需连接本地服务保存；离线草稿功能目前仅用于现场核查。请求中断可在此表单原样重试；改内容或重开表单前，请先确认原记录是否已保存。</p><div class="dialog-actions"><button type="button" class="button secondary" data-action="close-dialog">取消</button><button type="submit" class="button primary">保存农事记录</button></div></form>`); }
 async function openVerification(visitId:string) {
@@ -262,14 +296,14 @@ document.addEventListener('click',async event=>{ const button=(event.target as E
 modal.addEventListener('cancel',event=>{if(submitting){event.preventDefault();return;}const session=++dialogSession;if(currentDraft){event.preventDefault();void flushDraft().then(async()=>{if(session!==dialogSession)return;closeModal();currentDraft=undefined;await refreshDraftList();}).catch(e=>{if(session===dialogSession)formError(msg(e));});}});
 modal.addEventListener('close',()=>{if(!modal.open){currentDraft=undefined;storedDraftView=undefined;revokePhotos();}});
 modal.addEventListener('input',event=>{const input=event.target as HTMLInputElement|HTMLTextAreaElement;editObservationJson(input);if(!currentDraft||submitting||!input.closest('#verification-form'))return;if(input.name==='note')currentDraft.note=input.value;if(input.name==='label')currentDraft.label=input.value;if(input.name==='observed_at'&&input.value&&!Number.isNaN(+new Date(input.value)))currentDraft.observed_at=new Date(input.value).toISOString();void queueSave();});
-modal.addEventListener('change',async event=>{const input=event.target as HTMLInputElement;const changeSession=dialogSession;try{if(input.id==='observation-file')await readObservationFile(input);if(input.id==='photo-input'&&input.files&&currentDraft&&!submitting){const files=Array.from(input.files);if(currentDraft.photos.length+files.length>8)throw new Error('每次核查最多 8 张照片，请减少所选照片。');for(const file of files){if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('仅支持 JPG、PNG 或 WebP 照片。');if(file.size>10*1024*1024)throw new Error(`照片 ${file.name} 超过 10 MB，请选择较小照片。`);}for(const file of files)currentDraft.photos.push({key:crypto.randomUUID(),blob:file,name:file.name});await queueSave();renderDraftPhotos();input.value='';}}catch(error){if(changeSession===dialogSession)formError(msg(error));else toast(`先前表单处理未完成：${msg(error)}`);}});
-modal.addEventListener('submit',async event=>{event.preventDefault();const form=event.target as HTMLFormElement;if(form.id==='observation-form'&&observationReads.has(form)){formError('所选文件仍在读取，请等待完成或手动编辑 JSON 后再提交。');return;}if(!form.reportValidity())return;if(form.id==='verification-form')return submitVerification();const submit=form.querySelector<HTMLButtonElement>('[type="submit"]')!;if(submit.disabled)return;const data=new FormData(form);submit.disabled=true;form.dataset.submitting='true';const fields=form.querySelector<HTMLFieldSetElement>('#observation-fields');if(fields)fields.disabled=true;const session=dialogSession;const isCurrent=()=>modal.open&&session===dialogSession;const value=(key:string)=>String(data.get(key)||'').trim();let recordAttempted=false;try{
+modal.addEventListener('change',async event=>{const input=event.target as HTMLInputElement;const changeSession=dialogSession;try{if(input.id==='observation-record'){selectObservation(input as unknown as HTMLSelectElement);return;}if(input.id==='observation-file')await readObservationFile(input);if(input.id==='photo-input'&&input.files&&currentDraft&&!submitting){const files=Array.from(input.files);if(currentDraft.photos.length+files.length>8)throw new Error('每次核查最多 8 张照片，请减少所选照片。');for(const file of files){if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('仅支持 JPG、PNG 或 WebP 照片。');if(file.size>10*1024*1024)throw new Error(`照片 ${file.name} 超过 10 MB，请选择较小照片。`);}for(const file of files)currentDraft.photos.push({key:crypto.randomUUID(),blob:file,name:file.name});await queueSave();renderDraftPhotos();input.value='';}}catch(error){if(changeSession===dialogSession)formError(msg(error));else toast(`先前表单处理未完成：${msg(error)}`);}});
+modal.addEventListener('submit',async event=>{event.preventDefault();const form=event.target as HTMLFormElement;if(form.id==='observation-form'&&observationBundles.has(form)&&observationBundles.get(form)!.selected===undefined){formError('请先选择规范化文件中的一条观测，或手动编辑 JSON。');return;}if(form.id==='observation-form'&&observationReads.has(form)){formError('所选文件仍在读取，请等待完成或手动编辑 JSON 后再提交。');return;}if(!form.reportValidity())return;if(form.id==='verification-form')return submitVerification();const submit=form.querySelector<HTMLButtonElement>('[type="submit"]')!;if(submit.disabled)return;const data=new FormData(form);submit.disabled=true;form.dataset.submitting='true';const fields=form.querySelector<HTMLFieldSetElement>('#observation-fields');if(fields)fields.disabled=true;const session=dialogSession;const isCurrent=()=>modal.open&&session===dialogSession;const value=(key:string)=>String(data.get(key)||'').trim();let recordAttempted=false;try{
   if(form.id==='parcel-form'){let geometry=JSON.parse(value('geometry'));if(geometry.type==='Feature')geometry=geometry.geometry;recordAttempted=true;const p=await postRecord<Parcel>(form,'/parcels',{name:value('name'),region:value('region'),season:value('season'),geometry,...(value('sowing_date')?{sowing_date:value('sowing_date')}:{}),...(value('cultivar')?{cultivar:value('cultivar')}:{})});if(isCurrent()){selectedId=p.id;region='all';}toast('地块已录入，等待接入观测数据。');}
-  if(form.id==='observation-form'){const json=JSON.parse(value('json'));if(!json||Array.isArray(json)||typeof json!=='object')throw new Error('请提供单条观测 JSON 对象。');await post(`/parcels/${encodeURIComponent(form.dataset.parcel!)}/observations`,json);toast('观测已导入，来源与质量记录已保留。');}
+  if(form.id==='observation-form'){const json=singleObservation(value('json'));await post(`/parcels/${encodeURIComponent(form.dataset.parcel!)}/observations`,json);toast('观测已导入，来源与质量记录已保留。');}
   if(form.id==='visit-form'){const r=risks.find(r=>r.id===form.dataset.risk)!;await post('/visits',{parcel_id:r.parcel_id,risk_id:r.id,due_date:value('due_date'),assignee:value('assignee')||null,note:value('note')||null});toast('巡田任务已创建，可在田间助手查看。');}
   if(form.id==='event-form'){recordAttempted=true;await postRecord(form,`/parcels/${encodeURIComponent(form.dataset.parcel!)}/events`,{occurred_on:value('occurred_on'),kind:value('kind'),note:value('note')});toast('农事记录已保存。');}
   if(isCurrent())closeModal();await refresh();
-}catch(error){let text=error instanceof SyntaxError?'JSON 格式不正确，请检查括号、引号与逗号。':msg(error);if(recordAttempted&&!(error instanceof ApiError&&error.status<500))text+=' 原记录可能已经保存。保持内容重试可核对原结果；改内容或重开表单前请先检查列表。';if(isCurrent())formError(text);else toast(`先前表单保存未确认：${text}`);}finally{delete form.dataset.submitting;if(fields)fields.disabled=false;submit.disabled=observationReads.has(form);}});
+}catch(error){let text=error instanceof SyntaxError?'JSON 格式不正确，请检查括号、引号与逗号。':msg(error);if(recordAttempted&&!(error instanceof ApiError&&error.status<500))text+=' 原记录可能已经保存。保持内容重试可核对原结果；改内容或重开表单前请先检查列表。';if(isCurrent())formError(text);else toast(`先前表单保存未确认：${text}`);}finally{delete form.dataset.submitting;if(fields)fields.disabled=false;submit.disabled=observationReads.has(form)||(observationBundles.has(form)&&observationBundles.get(form)!.selected===undefined);}});
 window.addEventListener('online',()=>{render();toast('网络状态已恢复。草稿不会自动上传，请手动提交。');});
 window.addEventListener('offline',()=>render());
 void refresh();

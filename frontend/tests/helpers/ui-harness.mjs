@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
+import { parseObservationInput, observationImportSummary } from '../../src/observation-import.ts';
 import { ApiError } from '../../src/api.ts';
 import { DraftConflictError } from '../../src/drafts.ts';
 
@@ -78,6 +79,7 @@ export function harness({ pathname = '/admin' } = {}) {
     window,
     createSourceController: () => ({ refresh: async () => {} }),
     listDrafts: async () => [], saveDraft: async draft => { draft.revision = (draft.revision || 0) + 1; },
+    parseObservationInput, observationImportSummary,
     post: async () => ({}), DraftConflictError, ApiError, crypto, structuredClone, URL, Date, Error, Promise,
     setTimeout() {}, HTMLButtonElement: Button,
     FormData: class { constructor(form) { this.form = form; } get(key) { return this.form.values[key]; } },
