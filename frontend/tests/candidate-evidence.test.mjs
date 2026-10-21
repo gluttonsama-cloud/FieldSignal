@@ -44,6 +44,17 @@ test('routine, missing and mismatched record relationships are explicit without 
   assert.match(recordCandidate(record,[{id:'v1',parcel_id:'p1',risk_id:risk().id}],[{...risk(),parcel_id:'p2'}]).message,/候选与核查记录的地块不一致/);
 });
 
+test('follow-up evidence retains its source identity without inventing a new or inherited candidate',async()=>{
+  const ui=setup();let reads=0;ui.context.api=async()=>{reads++;return rows();};
+  ui.run("delete visits[0].risk_id;visits[0].source_verification_id='previous-<report>'");
+  await ui.click('view-record-evidence',{record:'record-1'});
+  assert.match(ui.modal.innerHTML,/previous-&lt;report&gt;/);assert.match(ui.modal.innerHTML,/未直接关联新的算法候选/);
+  assert.doesNotMatch(ui.modal.innerHTML,/自主巡田，未关联|当时保存的算法候选|previous-<report>/);assert.equal(reads,0);
+  await ui.click('close-dialog');ui.run('visits[0].risk_id=savedRisk.id');
+  await ui.click('view-record-evidence',{record:'record-1'});
+  assert.match(ui.modal.innerHTML,/来源关系不一致/);assert.doesNotMatch(ui.modal.innerHTML,/当时保存的算法候选/);assert.equal(reads,0);
+});
+
 test('pending field tasks expose their own candidate evidence before starting verification, without inventing a routine or mismatched association',async()=>{
   const ui=setup('/field'),requests=[];
   ui.run("visits[0].status='pending';visits[0].due_date='2026-10-18';risks[0].status='assigned'");

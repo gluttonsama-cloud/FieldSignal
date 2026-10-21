@@ -67,13 +67,12 @@ class PublicSampleImports:
             data=self.store.get(c,'source_imports',import_id)
             return current_import(data) if data else None
 
-    def matches_public_record(self,observation):
-        """Catch accidental copy/relabel of registered public inputs, not forgery."""
-        checksums=observation.provenance.asset_checksums
+    def public_record_fingerprints(self,c):
+        """Read known sample identifiers once, using the caller's transaction."""
         identities=set()
         try:
             adapter=LocalObservationBundleAdapter(self.manifest)
-            if adapter.manifest.scope!='public_sample': return False
+            if adapter.manifest.scope!='public_sample': raise BundleError('Public source registry cannot load a parcel bundle')
             keys={key for record in adapter.manifest.records for key in [*record.assets.values(),record.data] if key}
             known={adapter.manifest.files[key].sha256 for key in keys}
             records,_=adapter.normalize()
@@ -82,9 +81,15 @@ class PublicSampleImports:
             known=set()
         # Previously imported evidence remains recognizable even if source files
         # are subsequently missing. Reading it does not create any field records.
+        for batch in self.store.all(c,'source_imports'):
+            for record in batch['observations']:
+                known.update(record['provenance'].get('asset_checksums',{}).values())
+                identities.add((record['source'],record['source_record_id']))
+        return known,identities
+
+    def matches_public_record(self,observation):
+        """Catch accidental copy/relabel of registered public inputs, not forgery."""
+        checksums=observation.provenance.asset_checksums
         with self.store.connect() as c:
-            for batch in self.store.all(c,'source_imports'):
-                for record in batch['observations']:
-                    known.update(record['provenance'].get('asset_checksums',{}).values())
-                    identities.add((record['source'],record['source_record_id']))
+            known,identities=self.public_record_fingerprints(c)
         return bool(known.intersection(checksums.values())) or (observation.source,observation.source_record_id) in identities

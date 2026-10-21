@@ -5,6 +5,7 @@ import { esc, boundaryMap, trend, usable } from '../src/display.ts';
 import { saveDraft, listDrafts, clearDraft } from '../src/drafts.ts';
 import { uploadVerificationDraft } from '../src/sync.ts';
 import { api, ApiError } from '../src/api.ts';
+import { photoReceipt, verificationReceipt } from './helpers/submission-receipts.mjs';
 
 globalThis.window = { indexedDB: globalThis.indexedDB };
 const observation = (overrides = {}) => ({ id:'o1',parcel_id:'p1',observed_at:new Date().toISOString(),source:'sentinel2',source_record_id:'src',features:{ndvi:.5},quality:{usable:true,valid_fraction:.8,cloud_fraction:.1,flags:[]},provenance:{provider:'fixture',collection:'same',item_id:'item',processing_version:'v1'},...overrides });
@@ -64,12 +65,12 @@ test('transient photo failure leaves original draft and blobs intact', async () 
 
 test('verification failure preserves uploaded ids, then retries without duplicate upload', async () => {
   const value=draft('v-retry');await saveDraft(value);let calls=[];
-  globalThis.fetch=async(path,options)=>{calls.push([path,options]);if(path.endsWith('/photos'))return Response.json({id:'uploaded-1'});throw new TypeError('lost connection');};
+  globalThis.fetch=async(path,options)=>{calls.push([path,options]);if(path.endsWith('/photos'))return Response.json(photoReceipt(value,'uploaded-1'));throw new TypeError('lost connection');};
   await assert.rejects(uploadVerificationDraft(value),/暂时无法连接/);
   const stored=(await listDrafts()).find(x=>x.visit_id===value.visit_id);
   assert.equal(stored.photos[0].uploaded_id,'uploaded-1');
   const stableKey=stored.client_submission_id;calls=[];
-  globalThis.fetch=async(path,options)=>{calls.push([path,options]);return Response.json({id:'verification-1',visit_id:value.visit_id});};
+  globalThis.fetch=async(path,options)=>{calls.push([path,options]);return Response.json(verificationReceipt(stored,{id:'verification-1'}));};
   await uploadVerificationDraft(stored);
   assert.equal(calls.length,1);assert.ok(calls[0][0].endsWith('/verifications'));
   const payload=JSON.parse(calls[0][1].body);assert.equal(payload.client_submission_id,stableKey);assert.deepEqual(payload.photo_ids,['uploaded-1']);
@@ -78,7 +79,7 @@ test('verification failure preserves uploaded ids, then retries without duplicat
 
 test('queued remote deletes are acknowledged before replacement photo uploads', async () => {
   const value=draft('v-replace');value.pending_delete_photo_ids=['old-photo'];await saveDraft(value);const calls=[];
-  globalThis.fetch=async(path,options)=>{calls.push([path,options.method]);if(options.method==='DELETE')return new Response(null,{status:204});if(path.endsWith('/photos'))return Response.json({id:'new-photo'});return Response.json({id:'verification-2',visit_id:value.visit_id});};
+  globalThis.fetch=async(path,options)=>{calls.push([path,options.method]);if(options.method==='DELETE')return new Response(null,{status:204});if(path.endsWith('/photos'))return Response.json(photoReceipt(value,'new-photo'));return Response.json(verificationReceipt(value,{id:'verification-2'}));};
   await uploadVerificationDraft(value);
   assert.deepEqual(calls.map(c=>c[1]),['DELETE','POST','POST']);assert.ok(calls[0][0].endsWith('/photos/old-photo'));
   assert.deepEqual(value.pending_delete_photo_ids,[]);
@@ -96,7 +97,7 @@ test('failed queued delete leaves queue and replacement blob available for retry
 test('unconfirmed or mismatched verification does not clear draft', async () => {
   const value=draft('v-wrong-result');value.photos=[];await saveDraft(value);
   globalThis.fetch=async()=>Response.json({id:'wrong',visit_id:'other'});
-  await assert.rejects(uploadVerificationDraft(value),/未确认核查记录/);
+  await assert.rejects(uploadVerificationDraft(value),/回执.*尚未确认/);
   assert.ok((await listDrafts()).find(x=>x.visit_id===value.visit_id));await clearDraft(value);
 });
 
@@ -123,7 +124,7 @@ test('successful server result cannot delete another tab edit made during submis
   globalThis.fetch=async()=>{
     const other=(await listDrafts()).find(x=>x.visit_id===value.visit_id);
     other.note='提交过程中保存的新草稿'; await saveDraft(other);
-    return Response.json({id:'verified-race',visit_id:value.visit_id});
+    return Response.json(verificationReceipt(value,{id:'verified-race'}));
   };
   await assert.rejects(uploadVerificationDraft(value),/提交已确认/);
   const stored=(await listDrafts()).find(x=>x.visit_id===value.visit_id);

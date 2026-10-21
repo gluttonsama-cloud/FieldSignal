@@ -1,9 +1,36 @@
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import Response
-from app.domain.models import ParcelCreate, ObservationCreate, AnalysisCreate, VisitCreate, VisitPlanUpdate, VerificationCreate, FarmEventCreate
+from fastapi.routing import APIRoute
+from app.domain.models import ParcelCreate, ObservationCreate, ObservationBatchCreate, AnalysisCreate, VisitCreate, FollowUpVisitCreate, VisitPlanUpdate, VerificationCreate, FarmEventCreate
 from app.application.service import ServiceError
 from app.domain.models import PublicSampleImportCreate
 from app.adapters.local_bundle import BundleError
+
+MAX_OBSERVATION_BATCH_BYTES=1024*1024
+
+
+class ObservationBatchRoute(APIRoute):
+    """Bound actual incoming bytes before FastAPI buffers or parses the batch."""
+    def get_route_handler(self):
+        handler=super().get_route_handler()
+
+        async def bounded_handler(request:Request):
+            raw=bytearray()
+            async for chunk in request.stream():
+                if len(raw)+len(chunk)>MAX_OBSERVATION_BATCH_BYTES:
+                    raise ServiceError(413,'observation_batch_too_large','批量观测请求不能超过1 MiB，未导入本次请求。')
+                raw.extend(chunk)
+            # Replay the bounded body through a normal Request, preserving typed
+            # validation and OpenAPI without global middleware or private caches.
+            pending=True
+            async def receive():
+                nonlocal pending
+                if pending:
+                    pending=False
+                    return {'type':'http.request','body':bytes(raw),'more_body':False}
+                return await request.receive()
+            return await handler(Request(request.scope,receive))
+        return bounded_handler
 
 
 def request_idempotency_key(values:list[str]|None=Header(default=None,alias='Idempotency-Key',description='Optional single globally unique 1–128 character token: letters, digits, . _ : -. Reuse only for the same operation, target and normalized payload.')):
@@ -53,6 +80,14 @@ def router(service,fixtures_enabled):
     @api.post('/parcels/{parcel_id}/observations',status_code=201)
     def add_observation(parcel_id:str,body:ObservationCreate): return service.add_observation(parcel_id,body)
 
+    batch_api=APIRouter(route_class=ObservationBatchRoute)
+
+    @batch_api.post('/parcels/{parcel_id}/observation-batches',status_code=201)
+    def add_observation_batch(parcel_id:str,body:ObservationBatchCreate,idempotency_key:str|None=Depends(request_idempotency_key)):
+        return service.add_observation_batch(parcel_id,body,idempotency_key)
+
+    api.include_router(batch_api)
+
     @api.post('/parcels/{parcel_id}/analyses',status_code=201)
     def analyse(parcel_id:str,body:AnalysisCreate): return service.analyse(parcel_id,body.method)
 
@@ -96,6 +131,10 @@ def router(service,fixtures_enabled):
 
     @api.get('/verifications')
     def verifications(): return service.list('verifications')
+
+    @api.post('/verifications/{verification_id}/follow-up-visits',status_code=201)
+    def create_follow_up_visit(verification_id:str,body:FollowUpVisitCreate,idempotency_key:str|None=Depends(request_idempotency_key)):
+        return service.create_follow_up_visit(verification_id,body,idempotency_key)
 
     @api.get('/parcels/{parcel_id}/events')
     def events(parcel_id:str): return service.list('events',parcel_id)

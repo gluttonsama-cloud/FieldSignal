@@ -1,3 +1,4 @@
+import { syntheticRecordReceipt } from './helpers/record-receipts.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { harness, deferred } from './helpers/ui-harness.mjs';
@@ -7,7 +8,7 @@ function visitUi() {
   const ui=harness({pathname:'/field'}),calls=[];
   Object.assign(ui.context,display,{boundaryMap:()=>'<span>Boundary preview</span>',trend:()=>'<span>No observations</span>'});
   ui.run("dashboard.parcels.forEach(p=>{p.season='2026-2027';p.region='other';p.area_ha=1}); risks=[];visits=[];observations=[];connected=true;fieldTab='parcels'");
-  ui.context.post=async(path,body,key)=>{calls.push({path,body:structuredClone(body),key});return {id:'visit-new'};};
+  ui.context.post=async(path,body,key)=>{calls.push({path,body:structuredClone(body),key});return syntheticRecordReceipt(path,body,'visit-new');};
   return {...ui,calls};
 }
 function fill(ui) {
@@ -74,7 +75,7 @@ test('in-flight duplicate submit is gated and late completion leaves a replaceme
   const done=ui.submit(form);await ui.submit(form);assert.equal(ui.calls.length,1);
   await ui.click('close-dialog');ui.run("selectedId='p2'");await ui.click('new-routine-visit');
   const replacement=fill(ui);replacement.values.note='Do not overwrite';
-  pending.resolve({id:'old-visit'});await done;
+  pending.resolve(syntheticRecordReceipt(ui.calls[0].path,ui.calls[0].body,'old-visit'));await done;
   assert.equal(ui.modal.open,true);assert.equal(ui.modal.form,replacement);
   assert.equal(replacement.values.note,'Do not overwrite');assert.equal(ui.run('fieldTab'),'parcels');
 });

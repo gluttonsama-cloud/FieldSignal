@@ -2,7 +2,7 @@ import type { Parcel, Verification } from './types';
 
 // A spreadsheet-view export, not a lossless database backup. A visible text
 // prefix avoids relying on spreadsheet-specific apostrophe escaping.
-function cell(value: unknown): string {
+export function csvCell(value: unknown): string {
   const text=String(value??'');
   const literal=/^[=+\-@＝＋－＠\s\p{Cc}\p{Cf}'"]/u.test(text)?`文本：${text}`:text;
   return `"${literal.replace(/"/g,'""')}"`;
@@ -15,15 +15,19 @@ export function verificationCsv(records: readonly Verification[], parcels: reado
     const origin=parcel?.data_origin==='fixture'?'开发模拟数据':parcel?.data_origin==='user'?'用户录入':'来源未知';
     return [scope,completeness,record.id,record.visit_id,record.parcel_id,parcel?.name??'',parcel?.season??'',origin,record.observed_at,record.created_at,record.label,Object.hasOwn(labels,record.label)?labels[record.label]:record.label,'人工现场报告，未经裁定，非确诊',record.note,record.photo_ids.length];
   });
-  return '\uFEFF'+[header,...rows].map(row=>row.map(cell).join(',')).join('\r\n')+'\r\n';
+  return '\uFEFF'+[header,...rows].map(row=>row.map(csvCell).join(',')).join('\r\n')+'\r\n';
 }
 
 export function downloadVerificationCsv(csv: string): void {
+  downloadCsv(csv,'fieldsignal-loaded-verifications.csv');
+}
+
+export function downloadCsv(csv: string, filename: string): void {
   const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   let anchor: HTMLAnchorElement|undefined;
   try {
     anchor=document.createElement('a');anchor.href=url;
-    anchor.download='fieldsignal-loaded-verifications.csv';anchor.hidden=true;
+    anchor.download=filename;anchor.hidden=true;
     document.body.append(anchor);anchor.click();
   } finally {
     anchor?.remove();

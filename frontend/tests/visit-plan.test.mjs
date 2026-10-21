@@ -1,3 +1,4 @@
+import { syntheticRecordReceipt } from './helpers/record-receipts.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ApiError } from '../src/api.ts';
@@ -6,7 +7,7 @@ import { harness, deferred } from './helpers/ui-harness.mjs';
 
 function planUi(){
   const ui=harness({pathname:'/field'}),calls=[];
-  Object.assign(ui.context,display,{post:async(path,body,key)=>{calls.push({path,body:structuredClone(body),key});return {...ui.run('visits[0]'),...body,plan_revision:1};},saveDraft:()=>{throw new Error('Plan edit must not write a field draft');}});
+  Object.assign(ui.context,display,{post:async(path,body,key)=>{calls.push({path,body:structuredClone(body),key});return syntheticRecordReceipt(path,body,'v1',ui.run('visits[0]'));},saveDraft:()=>{throw new Error('Plan edit must not write a field draft');}});
   ui.run("visits=[{id:'v1',parcel_id:'p1',risk_id:'r1',status:'pending',due_date:'2026-10-18',assignee:'Original person',note:'Original candidate prompt',created_at:'2026-10-18T00:00:00Z'},{id:'v2',parcel_id:'p2',status:'pending',due_date:'2026-10-19',plan_revision:7}];drafts=[{visit_id:'v1',note:'Unsaved field report',client_submission_id:'unchanged-draft',revision:5,photos:[]}]");
   return {...ui,calls};
 }
@@ -40,14 +41,14 @@ test('duplicate clicks do not double update and a late response cannot close or 
   ui.context.post=async(path,body,key)=>{ui.calls.push({path,body,key});return pending.promise;};
   const saving=ui.submit(old);await ui.submit(old);assert.equal(ui.calls.length,1);
   await ui.click('close-dialog');await ui.click('edit-visit-plan',{id:'v2'});const replacement=fill(ui);replacement.values.assignee='Do not change';
-  pending.resolve({...ui.run('visits[0]'),assignee:'Corrected person',plan_revision:1});await saving;
+  pending.resolve(syntheticRecordReceipt(ui.calls[0].path,ui.calls[0].body,'v1',ui.run('visits[0]')));await saving;
   assert.equal(ui.modal.open,true);assert.equal(ui.modal.form,replacement);assert.equal(replacement.values.assignee,'Do not change');assert.equal(replacement.dataset.revision,'7');assert.equal(ui.run('visits[1].plan_revision'),7);
 });
 
 test('a late plan response cannot downgrade a newer or completed task when the following refresh fails',async()=>{
   for(const [status,revision] of [['pending',2],['completed',1],['completed',0]]){
     const ui=planUi(),pending=deferred();await ui.click('edit-visit-plan',{id:'v1'});const form=fill(ui);
-    const oldResult={...ui.run('visits[0]'),assignee:'Earlier saved person',plan_revision:1};
+    const oldResult=syntheticRecordReceipt('/visits/v1/plan',{expected_revision:0,due_date:form.values.due_date,assignee:form.values.assignee},'v1',ui.run('visits[0]'));
     ui.context.post=async()=>pending.promise;const saving=ui.submit(form);await ui.click('close-dialog');
     ui.context.newer={...oldResult,status,plan_revision:revision,assignee:'Latest confirmed person'};
     ui.run("visits[0]=newer;refresh=async()=>{loadError='offline';}");

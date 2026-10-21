@@ -5,6 +5,7 @@ import { uploadVerificationDraft } from '../src/sync.ts';
 import { saveDraft, listDrafts, clearDraft, DraftConflictError } from '../src/drafts.ts';
 import { esc } from '../src/display.ts';
 import { harness } from './helpers/ui-harness.mjs';
+import { photoReceipt, verificationReceipt } from './helpers/submission-receipts.mjs';
 
 globalThis.window={indexedDB:globalThis.indexedDB};
 const makeDraft=()=>({visit_id:crypto.randomUUID(),parcel_id:'p1',parcel_name:'合成地块',parcel_season:'2026-2027',data_origin:'fixture',client_submission_id:crypto.randomUUID(),observed_at:'2026-10-17T12:00:00Z',label:'uncertain',note:'合成现场记录',photos:[1,2,3].map(i=>({key:`photo-${i}`,name:i===2?'second-<photo>.png':`photo-${i}.png`,blob:new Blob([`synthetic-photo-${i}`],{type:'image/png'})})),state:'draft',updated_at:'2026-10-18T00:00:00Z'});
@@ -21,7 +22,7 @@ test('a rejected or unconfirmed second photo is identifiable; confirmed first ph
     const draft=makeDraft();await saveDraft(draft);const ui=photoUi(draft),sent=[];
     globalThis.fetch=async(path,options)=>{
       sent.push(path);assert.ok(path.endsWith('/photos'));
-      if(sent.length===1)return Response.json({id:'confirmed-first'});
+      if(sent.length===1)return Response.json(photoReceipt(draft,'confirmed-first'));
       if(failure==='rejected')return Response.json({error:{message:'无法解码图片或图片超过1600万像素'}},{status:422});
       if(failure==='missing-id')return Response.json({});
       throw new TypeError('response lost');
@@ -41,8 +42,8 @@ test('a rejected or unconfirmed second photo is identifiable; confirmed first ph
     const resumed=photoUi(stored),retry=[];
     globalThis.fetch=async(path,options)=>{
       retry.push({path,options});
-      if(path.endsWith('/photos'))return Response.json({id:`confirmed-${retry.length+1}`});
-      return Response.json({id:'result',visit_id:stored.visit_id,parcel_id:'p1',photo_ids:['confirmed-first','confirmed-2','confirmed-3'],created_at:'2026-10-18T12:00:00Z'});
+      if(path.endsWith('/photos'))return Response.json(photoReceipt(stored,`confirmed-${retry.length+1}`));
+      return Response.json(verificationReceipt(stored,{id:'result'}));
     };
     await resumed.submit();assert.equal(retry.length,3);assert.equal(resumed.modal.open,false);
     assert.equal(await retry[0].options.body.text(),failure==='rejected'?'replacement':'synthetic-photo-2');
@@ -57,7 +58,7 @@ test('a local revision conflict after a confirmed photo is not mislabeled as a p
   globalThis.fetch=async()=>{
     calls++;
     const newer=(await listDrafts()).find(d=>d.visit_id===draft.visit_id);newer.note='另一页面的新备注';await saveDraft(newer);
-    return Response.json({id:'confirmed-first'});
+    return Response.json(photoReceipt(draft,'confirmed-first'));
   };
   await assert.rejects(uploadVerificationDraft(draft),error=>error instanceof DraftConflictError&&!error.message.includes('第 1/3 张照片'));
   assert.equal(calls,1);assert.equal(draft.photos[0].uploaded_id,'confirmed-first');

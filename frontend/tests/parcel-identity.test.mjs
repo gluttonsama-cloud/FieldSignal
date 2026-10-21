@@ -1,3 +1,4 @@
+import { syntheticRecordReceipt } from './helpers/record-receipts.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as display from '../src/display.ts';
@@ -29,7 +30,7 @@ test('same-name parcels remain distinguishable across seasons and colliding shor
 });
 
 test('farm-event confirmation shows the exact season and full ID while the submission stays bound to the opening parcel',async()=>{
-  const ui=parcelUi(),target=ui.run('selectedId'),calls=[];ui.context.post=async(path,body)=>{calls.push({path,body});return {id:'event-synthetic'};};
+  const ui=parcelUi(),target=ui.run('selectedId'),calls=[];ui.context.post=async(path,body)=>{calls.push({path,body});return syntheticRecordReceipt(path,body,'event-synthetic');};
   await ui.click('new-event');const form=ui.modal.form;assert.equal(form.dataset.parcel,target);assert.match(ui.modal.innerHTML,/种植季 2026-2027/);assert.ok(ui.modal.innerHTML.includes(target));assert.match(ui.modal.innerHTML,/北侧&lt;一号田&gt;/);
   Object.assign(form.values,{occurred_on:'2026-10-18',kind:'drainage',note:'Synthetic event'});ui.run('selectedId=dashboard.parcels[2].id');await ui.submit(form);
   assert.equal(calls.length,1);assert.equal(calls[0].path,`/parcels/${encodeURIComponent(target)}/events`);assert.equal(calls[0].body.note,'Synthetic event');

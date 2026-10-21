@@ -12,7 +12,7 @@ export interface SourceImportResult { created: boolean; import: SourceImport }
 
 export interface Analysis { id: string; parcel_id: string; method: string; evaluated_at: string; status: string; risk_id?: string; observation_count: number; message: string }
 export interface Risk { id: string; parcel_id: string; observation_id: string; status: string; priority: string; summary: string; method: string; model_version: string; created_at: string; evidence: { metric: string; latest_value: number; baseline_median: number; baseline_mad: number; absolute_drop: number; score: number; baseline_count: number; baseline_observation_ids?: string[]; latest_observation_id?: string; window_days?: number; limitations: string[]; [key: string]: unknown } }
-export interface Visit { id: string; parcel_id: string; risk_id?: string; plan_revision?: number; plan_updated_at?: string; status: string; due_date: string; assignee?: string; note?: string; created_at: string }
+export interface Visit { id: string; parcel_id: string; risk_id?: string; source_verification_id?: string | null; plan_revision?: number; plan_updated_at?: string; status: string; due_date: string; assignee?: string; note?: string; created_at: string }
 export interface Verification { id: string; visit_id: string; parcel_id: string; observed_at: string; label: string; note: string; photo_ids: string[]; client_submission_id?: string; created_at: string }
 export interface FarmEvent { id: string; parcel_id: string; occurred_on: string; kind: string; note: string; created_at: string }
 export interface Dashboard { parcel_count: number; open_risk_count: number; pending_visit_count: number; verification_count: number; parcels: Parcel[]; recent_verifications: Verification[] }

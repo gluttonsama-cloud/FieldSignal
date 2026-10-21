@@ -1,3 +1,4 @@
+import { syntheticRecordReceipt } from './helpers/record-receipts.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { harness, deferred, turn } from './helpers/ui-harness.mjs';
@@ -10,13 +11,13 @@ function eventForm(ui) {
 
 test('late success from a dismissed form does not close its replacement', async () => {
   const ui = harness(), pending = deferred();
-  ui.context.post = () => pending.promise;
+  let request;ui.context.post = (path,body) => {request={path,body};return pending.promise;};
   const done = ui.submit(eventForm(ui));
   await ui.click('close-dialog');
   ui.run('parcelModal()');
   const replacement = ui.modal.form;
   replacement.values.name = 'Unsaved replacement parcel';
-  pending.resolve({ id: 'event-a' });
+  pending.resolve(syntheticRecordReceipt(request.path,request.body,'event-a'));
   await done;
   assert.equal(ui.modal.open, true, 'the newer dialog must remain open');
   assert.equal(ui.modal.form, replacement);
@@ -40,7 +41,7 @@ test('a form retains the parcel it displayed when it was opened', async () => {
   const ui = harness(), paths = [];
   const form = eventForm(ui);
   ui.run("selectedId='p2'");
-  ui.context.post = async path => { paths.push(path); return { id: 'event-a' }; };
+  ui.context.post = async (path,body) => { paths.push(path); return syntheticRecordReceipt(path,body,'event-a'); };
   await ui.submit(form);
   assert.deepEqual(paths, ['/parcels/p1/events']);
 });
@@ -156,10 +157,10 @@ test('an older successful refresh cannot remove or deselect a newly created parc
   // A second completed form has selected its new parcel and requested fresh data.
   ui.run('selectedId="p2"');
   const newRefresh = ui.run('refresh()');
-  newer.resolve({ parcels: [{ id: 'p1' }, { id: 'p2' }] });
+  newer.resolve({ parcel_count: 2, open_risk_count: 0, pending_visit_count: 0, verification_count: 0, parcels: [{ id: 'p1' }, { id: 'p2' }] });
   await newRefresh;
   assert.equal(ui.run('selectedId'), 'p2');
-  older.resolve({ parcels: [{ id: 'p1' }] });
+  older.resolve({ parcel_count: 1, open_risk_count: 0, pending_visit_count: 0, verification_count: 0, parcels: [{ id: 'p1' }] });
   await oldRefresh;
   assert.equal(ui.run('selectedId'), 'p2');
   assert.equal(ui.run('dashboard.parcels.map(p=>p.id).join(",")'), 'p1,p2');
@@ -174,7 +175,7 @@ test('an older failed refresh cannot replace a newer successful connection state
   ui.run('refresh=realRefresh; loadDetail=async()=>{}');
   const oldRefresh = ui.run('refresh()');
   const newRefresh = ui.run('refresh()');
-  newer.resolve({ parcels: [{ id: 'p1' }, { id: 'p2' }] });
+  newer.resolve({ parcel_count: 2, open_risk_count: 0, pending_visit_count: 0, verification_count: 0, parcels: [{ id: 'p1' }, { id: 'p2' }] });
   await newRefresh;
   older.reject(new Error('Older request lost connection'));
   await oldRefresh;

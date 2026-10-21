@@ -21,12 +21,15 @@ async function openSecond(ui,resumed=false) {
 test('confirmed new and resumed visits open their own parcel records, even if the following list refresh fails',async()=>{
   for(const resumed of [false,true]){
     const ui=fieldUi();await openSecond(ui,resumed);
+    ui.run("recordFilters={query:'Old report',label:'normal',from:'2020-01-01',to:'2020-01-02',parcelId:''};recordFilterInputs={...recordFilters,query:'Earlier unapplied search'};");
     if(resumed)ui.context.api=async()=>{throw new Error('List refresh unavailable');};
     await ui.submit();
     assert.equal(ui.run('selectedId'),'p2');assert.equal(ui.run('fieldTab'),'records');assert.equal(ui.modal.open,false);
     assert.match(ui.app.innerHTML,/Acknowledged report for parcel two/);assert.doesNotMatch(ui.app.innerHTML,/暂无核查记录/);
     assert.equal(ui.run("visits.find(v=>v.id==='v2').status"),'completed');
     assert.equal(ui.run("verifications.filter(v=>v.id==='record-v2').length"),1);
+    assert.equal(ui.run('JSON.stringify(recordFilters)'),ui.run('JSON.stringify(defaultRecordFilters())'));
+    assert.equal(ui.run('JSON.stringify(recordFilterInputs)'),ui.run('JSON.stringify(defaultRecordFilters())'));
     if(resumed)assert.match(ui.app.innerHTML,/List refresh unavailable/);
   }
 });
@@ -52,10 +55,28 @@ test('successful navigation clears cached and pending details from the previous 
 
 test('unconfirmed submission keeps the original editor, selection and navigation without a new saved record',async()=>{
   const ui=fieldUi();await openSecond(ui);const original=ui.run('currentDraft.client_submission_id');
+  ui.run("recordFilters.query='Existing search';recordFilterInputs.query='Unapplied search'");
   ui.context.uploadVerificationDraft=async()=>{throw new Error('Response not confirmed');};await ui.submit();
   assert.equal(ui.run('selectedId'),'p1');assert.equal(ui.run('fieldTab'),'visits');assert.equal(ui.modal.open,true);
   assert.equal(ui.run('currentDraft.client_submission_id'),original);assert.equal(ui.run('verifications.length'),0);
   assert.equal(ui.run("visits.find(v=>v.id==='v2').status"),'pending');assert.match(ui.modal.error.textContent,/Response not confirmed/);
+  assert.equal(ui.run('recordFilters.query'),'Existing search');assert.equal(ui.run('recordFilterInputs.query'),'Unapplied search');
+});
+
+test('confirmed verification does not clear newer record-filter edits or applied choices while upload is pending',async()=>{
+  for(const action of ['input','apply','clear']){
+    const ui=fieldUi(),pending=deferred();await openSecond(ui);
+    ui.run("recordFilters.query='Existing search';recordFilterInputs.query='Existing search'");
+    ui.context.uploadVerificationDraft=async draft=>{await pending.promise;return verificationResult(draft);};
+    const done=ui.submit();await turn();
+    if(action==='input')ui.app.listeners.input({target:{id:'record-query',value:'New unapplied search',closest:()=>({})}});
+    else if(action==='apply')await ui.app.listeners.submit({target:{id:'record-filter-form',values:{query:'New applied search'},reportValidity:()=>true},preventDefault(){}});
+    else await ui.click('clear-record-filters');
+    const applied=ui.run('JSON.stringify(recordFilters)'),draft=ui.run('JSON.stringify(recordFilterInputs)');
+    pending.resolve();await done;
+    assert.equal(ui.run('JSON.stringify(recordFilters)'),applied);assert.equal(ui.run('JSON.stringify(recordFilterInputs)'),draft);
+    assert.equal(ui.run("verifications.filter(v=>v.id==='record-v2').length"),1);
+  }
 });
 
 test('late submission success or failure does not navigate, close or overwrite a newer interaction',async()=>{
@@ -64,11 +85,13 @@ test('late submission success or failure does not navigate, close or overwrite a
     ui.context.uploadVerificationDraft=async draft=>{await pending.promise;return verificationResult(draft);};
     const done=ui.submit();await turn();
     await ui.click('field-tab',{tab:'parcels'});await ui.click('new-event');const newer=ui.modal.form,submitText=newer.submit.textContent;
+    ui.run("recordFilters.query='Newer interaction filter';recordFilterInputs.query='Newer interaction input'");
     newer.values.note='New event note';
     if(succeeds)pending.resolve();else pending.reject(new Error('Old upload failed'));await done;
     assert.equal(ui.run('selectedId'),'p1');assert.equal(ui.run('fieldTab'),'parcels');
     assert.equal(ui.modal.open,true);assert.equal(ui.modal.form,newer);assert.match(ui.modal.innerHTML,/记一笔农事/);
     assert.equal(newer.values.note,'New event note');assert.equal(newer.submit.textContent,submitText);assert.equal(ui.modal.error.hidden,true);
+    assert.equal(ui.run('recordFilters.query'),'Newer interaction filter');assert.equal(ui.run('recordFilterInputs.query'),'Newer interaction input');
     if(succeeds){
       assert.equal(ui.run("verifications[0].parcel_id"),'p2');
       assert.equal(ui.run('currentDraft'),undefined,'a confirmed, cleared draft must not be re-saved when the newer form closes');

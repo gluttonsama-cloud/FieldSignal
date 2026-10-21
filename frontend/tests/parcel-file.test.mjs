@@ -1,3 +1,4 @@
+import { syntheticRecordReceipt } from './helpers/record-receipts.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseParcelGeometry, parcelGeometrySummary } from '../src/parcel-geometry.ts';
@@ -9,7 +10,7 @@ const changed={type:'Polygon',coordinates:[[[113,31],[113.01,31],[113.01,31.01],
 const wrappers=p=>[p,{type:'Feature',properties:{name:'Do not fill'},geometry:p},{type:'FeatureCollection',features:[{type:'Feature',properties:{season:'1900-1901'},geometry:p}]}];
 function parcelUi() {
   const ui=harness(),calls=[];Object.assign(ui.context,{boundaryMap,esc});
-  ui.context.post=async(path,body,key)=>{calls.push({path,body:JSON.parse(JSON.stringify(body)),key});return {id:'saved-parcel'};};
+  ui.context.post=async(path,body,key)=>{calls.push({path,body:JSON.parse(JSON.stringify(body)),key});return syntheticRecordReceipt(path,body,'saved-parcel');};
   ui.context.FormData=class {constructor(form){this.values=form.fields?.disabled?{}:{...form.values};}get(key){return this.values[key]??null;}};
   return {...ui,calls};
 }
@@ -112,6 +113,6 @@ test('Save snapshots before disabling controls, blocks changes and duplicate sub
   await choose(ui,form,file(JSON.stringify(polygon)));assert.equal(ui.calls.length,1);assert.deepEqual(ui.calls[0].body.geometry,changed);
   pending.reject(new Error('Response lost'));await submitted;
   assert.equal(form.fields.disabled,false);assert.equal(form.submit.disabled,false);assert.equal(ui.modal.open,true);
-  ui.context.post=async(path,body,key)=>{ui.calls.push({path,body:JSON.parse(JSON.stringify(body)),key});return{id:'saved'};};
+  ui.context.post=async(path,body,key)=>{ui.calls.push({path,body:JSON.parse(JSON.stringify(body)),key});return syntheticRecordReceipt(path,body,'saved');};
   await ui.submit(form);assert.deepEqual(ui.calls[0],ui.calls[1]);
 });

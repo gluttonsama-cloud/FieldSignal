@@ -157,6 +157,16 @@ class ObservationCreate(Contract):
             raise ValueError('光学观测必须提供地块云量质量字段')
         return self
 
+class ObservationBatchCreate(Contract):
+    """Normalized local output only; declared digests are not server-verified assets."""
+    schema_version: Annotated[int, Field(strict=True,ge=1,le=1)]
+    bundle_id: Text
+    scope: Literal['parcel']
+    bundle_sha256: Annotated[str, Field(pattern=r'^[0-9a-f]{64}$')]
+    processing_version: Text
+    observations: list[ObservationCreate] = Field(min_length=1,max_length=500)
+    limitations: list[str]
+
 class AnalysisCreate(Contract):
     method: Literal['statistical','isolation_forest'] = 'statistical'
 
@@ -166,6 +176,11 @@ class PublicSampleImportCreate(Contract):
 class VisitCreate(Contract):
     parcel_id: Text
     risk_id: Text | None = None
+    due_date: date
+    assignee: Annotated[str, Field(max_length=100)] | None = None
+    note: Annotated[str, Field(max_length=2000)] | None = None
+
+class FollowUpVisitCreate(Contract):
     due_date: date
     assignee: Annotated[str, Field(max_length=100)] | None = None
     note: Annotated[str, Field(max_length=2000)] | None = None

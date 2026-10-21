@@ -1,3 +1,4 @@
+import { syntheticRecordReceipt } from './helpers/record-receipts.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { post } from '../src/api.ts';
@@ -38,7 +39,7 @@ for (const type of ['parcel', 'event']) {
     const records = new Map();
     const { ui, calls } = transport(t, (call, attempt) => {
       const identity = key(call) || `unkeyed-${attempt}`;
-      if (!records.has(identity)) records.set(identity, { id: `saved-${type}-${records.size + 1}` });
+      if (!records.has(identity)) records.set(identity, syntheticRecordReceipt(call.path.replace('/api/v1',''),JSON.parse(call.body),`saved-${type}-${records.size + 1}`));
       if (attempt === 1) return lostResponse();
       return Response.json(records.get(identity), { status: 201 });
     });
@@ -105,7 +106,7 @@ for (const type of ['parcel', 'event']) {
     const replacement = openForm(ui, type);
     replacement.values[field] = 'Keep these unsaved edits';
     ui.run("selectedId='p2'");
-    pending.resolve(Response.json({ id: 'old-result' }, { status: 201 }));
+    pending.resolve(Response.json(syntheticRecordReceipt(calls[0].path.replace('/api/v1',''),JSON.parse(calls[0].body),'old-result'), { status: 201 }));
     await done;
     assert.equal(calls.length, 1);
     assert.equal(ui.modal.open, true);
@@ -131,7 +132,7 @@ for (const type of ['parcel', 'event']) {
     assert.match(ui.toast.textContent, /先前表单保存未确认/);
     assert.match(ui.toast.textContent, ambiguous);
     assert.notEqual(key(calls[0]), key(calls[1]));
-    newRequest.resolve(Response.json({ id: 'new-result' }, { status: 201 }));
+    newRequest.resolve(Response.json(syntheticRecordReceipt(calls[1].path.replace('/api/v1',''),JSON.parse(calls[1].body),'new-result'), { status: 201 }));
     await newDone;
     assert.equal(ui.modal.open, false);
     if (type === 'parcel') assert.equal(ui.run('selectedId'), 'new-result');

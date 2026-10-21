@@ -3,12 +3,19 @@ import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 import { parseParcelGeometry, parcelGeometrySummary } from '../../src/parcel-geometry.ts';
 import { parseObservationInput, observationImportSummary } from '../../src/observation-import.ts';
+import { observationBatchError, observationBatchReview, validateObservationBatchReceipt, observationBatchReceiptBody } from '../../src/observation-batch.ts';
+import { defaultVisitFilters, filterPendingVisits, visitFilterControls, visitPlanTiming } from '../../src/visit-filters.ts';
 import { recordPhotoStrip, recordPhotoViewer, bindRecordPhotoEvents, retryRecordPhoto, zoomRecordPhoto } from '../../src/record-photos.ts';
 import { shortParcelId } from '../../src/display.ts';
 import { verificationNoteError } from '../../src/sync.ts';
+import { reviewContentKey, verificationReviewBody } from '../../src/verification-review.ts';
 import { recordCandidate, candidateSnapshot, candidateObservations } from '../../src/candidate-evidence.ts';
+import { farmEventCsv, downloadFarmEventCsv } from '../../src/farm-event-export.ts';
 import { parcelBoundaryFile, downloadParcelBoundary } from '../../src/parcel-export.ts';
 import { ApiError } from '../../src/api.ts';
+import { defaultRecordFilters, recordFiltersActive, recordFilterError, filterVerifications, recordFilterDescription } from '../../src/record-filters.ts';
+import { validateParcelReceipt, validateVisitReceipt, validateFollowUpVisitReceipt, validateVisitPlanReceipt, validateFarmEventReceipt } from '../../src/record-receipts.ts';
+import { validateCoreRead, validateObservationRead, validateAnalysisRead, validateEventRead } from '../../src/read-contracts.ts';
 import { DraftConflictError } from '../../src/drafts.ts';
 
 // Exercise the production event handlers with a tiny DOM boundary. This does not
@@ -31,7 +38,7 @@ export function harness({ pathname = '/admin' } = {}) {
     constructor(dataset = {}) { this.dataset = dataset; }
   }
   const status = () => ({ textContent: '', hidden: true, focus() {} });
-  const app = { innerHTML: '', addEventListener() {} };
+  const app = { innerHTML: '', listeners: {}, addEventListener(type,fn) { this.listeners[type]=fn; }, querySelector() { return null; } };
   const modal = {
     open: false, className: '', listeners: {}, form: undefined, closeCount: 0,
     deferCloseEvents: false, closeEvents: [],
@@ -50,8 +57,9 @@ export function harness({ pathname = '/admin' } = {}) {
         .map(([key, value]) => [key.slice(5).replace(/-([a-z])/g, (_, ch) => ch.toUpperCase()), value]));
       const form = {
         id: attrs.id, dataset, values: {}, submit: new Button(),
+        recordFields: html.includes('id="record-fields"') ? {disabled:false} : undefined,
         reportValidity: () => true,
-        querySelector(selector) { return selector.includes('submit') ? this.submit : null; },
+        querySelector(selector) { return selector === '#record-fields' ? this.recordFields : selector.includes('submit') ? this.submit : null; },
         get isConnected() { return modal.form === this; },
       };
       this.form = form;
@@ -67,6 +75,7 @@ export function harness({ pathname = '/admin' } = {}) {
     querySelector(selector) {
       if (selector === '#candidate-observations') return this.candidateObservations;
       if (selector === '.candidate-evidence-viewer') return this.innerHTML.includes('class="candidate-evidence-viewer"') ? {} : null;
+      if (selector === '.follow-up-source-viewer') return this.innerHTML.includes('class="follow-up-source-viewer"') ? {} : null;
       if (selector === '.form-error') return this.error;
       if (selector === '.record-photo-viewer') return this.innerHTML.includes('class="record-photo-viewer"') ? {} : null;
       if (selector === '#draft-save') return this.saveStatus;
@@ -89,13 +98,15 @@ export function harness({ pathname = '/admin' } = {}) {
     window,
     createSourceController: () => ({ refresh: async () => {} }),
     listDrafts: async () => [], saveDraft: async draft => { draft.revision = (draft.revision || 0) + 1; },
-    parseObservationInput, observationImportSummary, parseParcelGeometry, parcelGeometrySummary,
+    parseObservationInput, observationImportSummary, observationBatchError, observationBatchReview, validateObservationBatchReceipt, observationBatchReceiptBody, parseParcelGeometry, parcelGeometrySummary,
     recordPhotoStrip, recordPhotoViewer, bindRecordPhotoEvents, retryRecordPhoto, zoomRecordPhoto,
-    recordCandidate, candidateSnapshot, candidateObservations, parcelBoundaryFile, downloadParcelBoundary,
-    post: async () => ({}), DraftConflictError, ApiError, crypto, structuredClone, URL, Date, Error, SyntaxError, Promise,
+    recordCandidate, candidateSnapshot, candidateObservations, parcelBoundaryFile, downloadParcelBoundary, defaultRecordFilters, recordFiltersActive, recordFilterError, filterVerifications, recordFilterDescription, defaultVisitFilters, filterPendingVisits, visitFilterControls, visitPlanTiming,
+    farmEventCsv, downloadFarmEventCsv,
+    validateParcelReceipt, validateVisitReceipt, validateFollowUpVisitReceipt, validateVisitPlanReceipt, validateFarmEventReceipt, post: async () => ({}), DraftConflictError, ApiError, crypto, structuredClone, URL, Date, Error, SyntaxError, Promise,
+    validateCoreRead, validateObservationRead, validateAnalysisRead, validateEventRead,
     setTimeout() {}, HTMLButtonElement: Button,
     FormData: class { constructor(form) { this.form = form; } get(key) { return this.form.values[key]; } },
-    verificationNoteError, shortParcelId, regions: {}, kinds: {}, labels: {}, today: () => '2026-10-18',
+    verificationNoteError, reviewContentKey, verificationReviewBody, shortParcelId, regions: {}, kinds: {}, labels: {}, today: () => '2026-10-18',
     fmtTime: value => value, localInput: value => value, esc: String, fixture: () => '',
   });
   vm.runInContext(`${mainSource}\nglobalThis.realRefresh=refresh; render=()=>{}; refresh=async()=>{};
@@ -105,7 +116,15 @@ export function harness({ pathname = '/admin' } = {}) {
     context, app, modal, toast, window,
     run: code => vm.runInContext(code, context),
     click: (action, dataset = {}) => document.listeners.click({ target: { closest: () => action === 'retry-draft-save' && modal.retrySave ? modal.retrySave : new Button({ action, ...dataset }) } }),
-    submit(form = modal.form) { return modal.listeners.submit({ target: form, preventDefault() {} }); },
+    review(form = modal.form) { return modal.listeners.submit({ target: form, preventDefault() {} }); },
+    submit(form = modal.form) {
+      // Complete the user-visible review AND explicit confirmation for legacy
+      // end-to-end handler scenarios. Review-only tests use review().
+      const reviewed=modal.listeners.submit({ target: form, preventDefault() {} });
+      if(form.id==='verification-form'&&modal.form?.id==='verification-review-form')
+        return modal.listeners.submit({target:modal.form,preventDefault(){}});
+      return reviewed;
+    },
   };
 }
 

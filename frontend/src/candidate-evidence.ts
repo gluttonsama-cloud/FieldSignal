@@ -7,6 +7,10 @@ export function recordCandidate(record: Verification, visits: Visit[], risks: Ri
   const visit=visits.find(item=>item.id===record.visit_id);
   if(!visit)return {message:'关联巡田任务尚未读取，无法确认候选关联。请关闭并刷新记录后重试。'};
   if(visit.parcel_id!==record.parcel_id)return {message:'巡田任务与核查记录的地块不一致，未展示候选依据。'};
+  if(visit.source_verification_id){
+    if(visit.risk_id)return {message:'复查任务同时含有候选关联，来源关系不一致，未展示候选依据。请刷新并核对原记录。'};
+    return {message:`此任务是对核查 ${visit.source_verification_id} 的复查，未直接关联新的算法候选。请查看上次核查及其原候选依据；本次现场报告不修改上次结论。`};
+  }
   if(!visit.risk_id)return {message:'自主巡田，未关联异常候选；没有算法候选依据。现场反馈仍保存在原核查记录中。'};
   const risk=risks.find(item=>item.id===visit.risk_id);
   if(!risk)return {message:`关联候选 ${visit.risk_id} 尚未读取或已缺失，无法展示依据。请关闭并刷新记录后重试。`};

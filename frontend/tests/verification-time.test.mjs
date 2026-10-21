@@ -54,18 +54,27 @@ test('offline season snapshots guide editing; legacy drafts resolve the exact pa
   assert.equal(submitted.observed_at,'2026-04-01T03:00:00.123Z');assert.equal(submitted.parcel_season,'2025-2026');
 });
 
-test('late metadata after an earlier save-close cannot save, repaint or submit a replacement draft',async()=>{
-  const ui=await uiFor(undefined),saveGate=deferred(),metadata=deferred();let writes=0,reads=0;
+test('late metadata after review confirmation cannot save, repaint or submit a replacement draft',async()=>{
+  const ui=await uiFor(undefined),metadata=deferred();let writes=0,reads=0;
   ui.run("delete currentDraft.parcel_season;delete dashboard.parcels[0].season;currentDraft.observed_at='2026-04-01T03:00:00.123Z'");
   const old=ui.run('currentDraft'),save=ui.context.saveDraft;
-  ui.context.saveDraft=async(...args)=>{writes++;await saveGate.promise;return save(...args);};
-  const close=ui.click('save-close');await turn();
+  ui.context.saveDraft=async(...args)=>{writes++;return save(...args);};
   ui.context.api=async()=>{reads++;return metadata.promise;};
-  const submit=ui.submit();await ui.submit();assert.equal(reads,1);
-  saveGate.resolve();await close;assert.equal(ui.modal.open,false);
-  await ui.click('verify',{id:'v2'});const priorWrites=writes,priorStatus=ui.modal.saveStatus.textContent;
+  await ui.review();const submit=ui.submit();await ui.submit();assert.equal(reads,1);
+  await ui.click('field-tab',{tab:'parcels'});await ui.click('verify',{id:'v2'});
+  const priorWrites=writes,priorStatus=ui.modal.saveStatus.textContent;
   metadata.resolve({id:'p1',season:'2025-2026'});await submit;
   assert.equal(ui.uploads,0);assert.equal(writes,priorWrites);assert.equal(ui.run('currentDraft.visit_id'),'v2');
   assert.equal(ui.modal.open,true);assert.equal(ui.modal.saveStatus.textContent,priorStatus);
   assert.equal(old.parcel_season,undefined);assert.equal(old.observed_at,'2026-04-01T03:00:00.123Z');
+});
+
+test('a pending Save and Return blocks review and confirmation until its local write settles',async()=>{
+  const ui=await uiFor(undefined),saving=deferred(),save=ui.context.saveDraft;let reads=0;
+  ui.run("delete currentDraft.parcel_season;delete dashboard.parcels[0].season;currentDraft.observed_at='2026-04-01T03:00:00.123Z'");
+  ui.context.saveDraft=async(...args)=>{await saving.promise;return save(...args);};
+  ui.context.api=async()=>{reads++;throw new Error('Must not request metadata while closing');};
+  const close=ui.click('save-close');await turn();await ui.submit();await ui.submit();
+  assert.equal(reads,0);assert.equal(ui.uploads,0);assert.equal(ui.modal.form.id,'verification-form');
+  saving.resolve();await close;assert.equal(ui.modal.open,false);
 });

@@ -61,7 +61,7 @@ with sync_playwright() as p:
     page.get_by_role('button',name='安排田间核查',exact=False).first.click()
     page.get_by_label('执行人（选填）').fill('本地界面测试')
     page.get_by_role('button',name='创建巡田任务',exact=True).click()
-    page.get_by_text('已安排巡田任务',exact=True).wait_for()
+    page.get_by_text('巡田任务创建已确认；当前任务状态请以刷新后的列表为准。',exact=True).wait_for()
     mobile = browser.new_context(viewport={'width':390,'height':844},is_mobile=True,has_touch=True,device_scale_factor=1)
     phone=mobile.new_page()
     phone.on('pageerror',lambda e:errors.append(str(e)))
@@ -78,7 +78,9 @@ with sync_playwright() as p:
     assert phone.locator('.draft-photo').count()==1
     # Cut API requests only: page is open, not claiming offline app shell capability.
     phone.route('**/api/v1/**',lambda route:route.abort('internetdisconnected'))
-    phone.get_by_role('button',name='提交核查',exact=True).click()
+    phone.get_by_role('button',name='核对并提交',exact=True).click()
+    phone.get_by_role('heading',name='核对现场记录',exact=True).wait_for()
+    phone.get_by_role('button',name='确认提交并完成巡田',exact=True).click()
     phone.get_by_text('草稿和照片未删除。',exact=False).wait_for()
     stored=phone.evaluate("""async () => await new Promise((resolve,reject)=>{const q=indexedDB.open('fieldsignal-local-drafts',2);q.onsuccess=()=>{const r=q.result.transaction('verifications').objectStore('verifications').getAll();r.onsuccess=()=>resolve(r.result.filter(x=>!x.removed).map(x=>({note:x.note,photos:x.photos.length,bytes:x.photos[0]?.blob.size,state:x.state,key:x.client_submission_id})));};q.onerror=reject;})""")
     assert len(stored)==1 and stored[0]['state']=='error' and stored[0]['photos']==1 and stored[0]['bytes']>0
@@ -90,7 +92,8 @@ with sync_playwright() as p:
     assert phone.get_by_label('现场备注',exact=True).input_value()==stored[0]['note']
     assert phone.locator('.draft-photo').count()==1
     phone.unroute('**/api/v1/**')
-    phone.get_by_role('button',name='重试提交核查',exact=True).click()
+    phone.get_by_role('button',name='重试核对并提交',exact=True).click()
+    phone.get_by_role('button',name='确认提交并完成巡田',exact=True).click()
     phone.get_by_text('核查已保存，巡田任务已完成。',exact=True).wait_for()
     assert phone.locator('dialog').is_visible()==False
     phone.get_by_role('button',name='记录',exact=True).click()
