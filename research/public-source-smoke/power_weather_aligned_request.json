@@ -1,0 +1,70 @@
+{
+  "requested_at_utc": "2026-10-15T01:52:17.489524+00:00",
+  "request_url": "https://power.larc.nasa.gov/api/temporal/daily/point?parameters=T2M_MIN%2CT2M_MAX%2CPRECTOTCORR&community=AG&longitude=112.4&latitude=30.7&start=20250426&end=20250428&format=JSON&time-standard=UTC",
+  "status": 200,
+  "bytes": 798,
+  "data": {
+    "type": "Feature",
+    "geometry": {
+      "type": "Point",
+      "coordinates": [
+        112.4,
+        30.7,
+        43.15
+      ]
+    },
+    "properties": {
+      "parameter": {
+        "T2M_MIN": {
+          "20250426": 16.83,
+          "20250427": 17.94,
+          "20250428": 17.15
+        },
+        "T2M_MAX": {
+          "20250426": 28.06,
+          "20250427": 30.0,
+          "20250428": 30.6
+        },
+        "PRECTOTCORR": {
+          "20250426": 0.0,
+          "20250427": 0.06,
+          "20250428": 0.02
+        }
+      }
+    },
+    "header": {
+      "title": "NASA/POWER Source Native Resolution Daily Data",
+      "api": {
+        "version": "v2.10.0",
+        "name": "POWER Daily API"
+      },
+      "sources": [
+        "MERRA2",
+        "POWER"
+      ],
+      "fill_value": -999.0,
+      "time_standard": "UTC",
+      "start": "20250426",
+      "end": "20250428"
+    },
+    "messages": [],
+    "parameters": {
+      "T2M_MIN": {
+        "units": "C",
+        "longname": "Temperature at 2 Meters Minimum"
+      },
+      "T2M_MAX": {
+        "units": "C",
+        "longname": "Temperature at 2 Meters Maximum"
+      },
+      "PRECTOTCORR": {
+        "units": "mm/day",
+        "longname": "Precipitation Corrected"
+      }
+    },
+    "times": {
+      "data": 0.322,
+      "process": 0.01
+    }
+  }
+}

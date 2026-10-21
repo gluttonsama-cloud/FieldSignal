@@ -1,0 +1,6 @@
+{
+  "requested_at_utc": "2026-10-15T01:49:42.236758+00:00",
+  "request_url": "https://sentinel1euwestrtc.blob.core.windows.net/sentinel1-grd-rtc/GRD/2025/3/13/IW/DV/S1A_IW_GRDH_1SDV_20250313T102759_20250313T102824_058285_073449_D170/measurement/iw-vv.rtc.tiff",
+  "status": 409,
+  "error_body": "﻿<?xml version=\"1.0\" encoding=\"utf-8\"?><Error><Code>PublicAccessNotPermitted</Code><Message>Public access is not permitted on this storage account.\nRequestId:d5cc86c9-a01e-0039-0e47-5ca978000000\nTime:2026-10-15T01:49:49.9782486Z</Message></Error>"
+}

@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "bundle_id": "shayang-public-window-20250428-v1",
+  "scope": "public_sample",
+  "title": "沙洋附近公开320米方窗 · 历史数据管线验收",
+  "files": {
+    "s2_stac": {
+      "path": "earthsearch_s2_c1_clear_search.json",
+      "sha256": "8373d674cb655a015b156115a5515b81891d6adc95538a742112f677df214c6f"
+    },
+    "red": {
+      "path": "red_sample_320m.tif",
+      "sha256": "a6c51ee8d230dcd4751414464f661e0addb8c790b7cbb8a92180e6a8a7e073e9"
+    },
+    "nir": {
+      "path": "nir_sample_320m.tif",
+      "sha256": "a5e402863dec1103be6801b0979f47ca0bb78c810d2ba2d7e3033ba09f1e0f29"
+    },
+    "scl": {
+      "path": "scl_sample_320m.tif",
+      "sha256": "d5c09ee29a0f42486b304367aa7c49d47c934a7ef4a3c6d01ed0cb6cba1c7851"
+    },
+    "power": {
+      "path": "power_weather_aligned.json",
+      "sha256": "ec09df9a729eba752766295c71539a3f24aaadb5d04fe2e6ba4e83d19463f947"
+    }
+  },
+  "records": [
+    {
+      "adapter": "sentinel2_local_window",
+      "retrieved_at": "2026-10-15T01:51:01.113951+00:00",
+      "provider": "Element 84 Earth Search / Copernicus Sentinel-2",
+      "license": "Contains modified Copernicus Sentinel data 2025; Copernicus Sentinel Data Legal Notice",
+      "source_uri": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-c1-l2a/items/S2A_T49RFP_20250428T031659_L2A",
+      "stac": "s2_stac",
+      "item_id": "S2A_T49RFP_20250428T031659_L2A",
+      "assets": {
+        "red": "red",
+        "nir": "nir",
+        "scl": "scl"
+      }
+    },
+    {
+      "adapter": "nasa_power_daily",
+      "retrieved_at": "2026-10-15T01:52:17.489524+00:00",
+      "provider": "NASA POWER Project, NASA Langley Research Center / MERRA-2",
+      "license": "NASA POWER open data; attribution retained. https://registry.opendata.aws/nasa-power/",
+      "source_uri": "https://power.larc.nasa.gov/api/temporal/daily/point?parameters=T2M_MIN%2CT2M_MAX%2CPRECTOTCORR&community=AG&longitude=112.4&latitude=30.7&start=20250426&end=20250428&format=JSON&time-standard=UTC",
+      "data": "power"
+    }
+  ],
+  "limitations": [
+    "公开任意方窗，不是已核实油菜田或用户地块；不用于当前农情判断。",
+    "只有1期光学观测；3天气象不能充当光学历史样本，不能作趋势异常、病害、产量或健康诊断。",
+    "光学数据为2025年历史观测；POWER为粗网格回溯气象，不是地块测站或未来预报。",
+    "本操作只校验和处理本地随包公开文件，不访问外部服务，不外发用户边界或位置。"
+  ]
+}

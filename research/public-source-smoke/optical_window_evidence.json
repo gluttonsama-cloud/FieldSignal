@@ -1,0 +1,162 @@
+{
+  "read_at_utc": "2026-10-15T01:51:01.113951+00:00",
+  "demonstration_only": true,
+  "not_a_known_oilseed_rape_field": true,
+  "item_id": "S2A_T49RFP_20250428T031659_L2A",
+  "acquired_at": "2025-04-28T03:19:50.740000Z",
+  "scene_cloud_cover_pct": 3.250686,
+  "center_wgs84": [
+    112.4,
+    30.7
+  ],
+  "window_bounds_epsg32649": [
+    633900,
+    3397020,
+    634220,
+    3397340
+  ],
+  "assets": {
+    "red": {
+      "asset_href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/sentinel-2-c1-l2a/49/R/FP/2025/4/S2A_T49RFP_20250428T031659_L2A/B04.tif",
+      "http_range_probe": {
+        "status": 206,
+        "content_range": "bytes 0-16383/239994844",
+        "bytes_read": 16384,
+        "header_sha256": "336b3c40d8ef309a52e5c5bf8a3237c63a64c2afabf754efc678a6f53f563792",
+        "magic_hex": "49492a00"
+      },
+      "gdal_size": [
+        10980,
+        10980
+      ],
+      "gdal_crs": "32649",
+      "gdal_geotransform": [
+        600000.0,
+        10.0,
+        0.0,
+        3400020.0,
+        0.0,
+        -10.0
+      ],
+      "gdal_dtype": "UInt16",
+      "gdal_nodata": 0.0,
+      "gdal_scale": 0.0001,
+      "gdal_offset": -0.1,
+      "stac_raster_band": {
+        "nodata": 0,
+        "data_type": "uint16",
+        "spatial_resolution": 10,
+        "scale": 0.0001,
+        "offset": -0.1
+      },
+      "pixel_window": [
+        3390,
+        268,
+        32,
+        32
+      ],
+      "raw_min": 1046.0,
+      "raw_max": 3499.0,
+      "unique_class_counts": null,
+      "local_sample_sha256": "a6c51ee8d230dcd4751414464f661e0addb8c790b7cbb8a92180e6a8a7e073e9"
+    },
+    "nir": {
+      "asset_href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/sentinel-2-c1-l2a/49/R/FP/2025/4/S2A_T49RFP_20250428T031659_L2A/B08.tif",
+      "http_range_probe": {
+        "status": 206,
+        "content_range": "bytes 0-16383/257935729",
+        "bytes_read": 16384,
+        "header_sha256": "1d143d57557738254cb957b4d6bc31ee8922ffb5f1a3334fab96cf813022bde2",
+        "magic_hex": "49492a00"
+      },
+      "gdal_size": [
+        10980,
+        10980
+      ],
+      "gdal_crs": "32649",
+      "gdal_geotransform": [
+        600000.0,
+        10.0,
+        0.0,
+        3400020.0,
+        0.0,
+        -10.0
+      ],
+      "gdal_dtype": "UInt16",
+      "gdal_nodata": 0.0,
+      "gdal_scale": 0.0001,
+      "gdal_offset": -0.1,
+      "stac_raster_band": {
+        "nodata": 0,
+        "data_type": "uint16",
+        "spatial_resolution": 10,
+        "scale": 0.0001,
+        "offset": -0.1
+      },
+      "pixel_window": [
+        3390,
+        268,
+        32,
+        32
+      ],
+      "raw_min": 1193.0,
+      "raw_max": 6020.0,
+      "unique_class_counts": null,
+      "local_sample_sha256": "a5e402863dec1103be6801b0979f47ca0bb78c810d2ba2d7e3033ba09f1e0f29"
+    },
+    "scl": {
+      "asset_href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/sentinel-2-c1-l2a/49/R/FP/2025/4/S2A_T49RFP_20250428T031659_L2A/SCL.tif",
+      "http_range_probe": {
+        "status": 206,
+        "content_range": "bytes 0-16383/6082156",
+        "bytes_read": 16384,
+        "header_sha256": "ad990d5348bcaecc3dc1b5ec3dc7dee84ba5d6b27c6ef02e87d2c62348a063f2",
+        "magic_hex": "49492a00"
+      },
+      "gdal_size": [
+        5490,
+        5490
+      ],
+      "gdal_crs": "32649",
+      "gdal_geotransform": [
+        600000.0,
+        20.0,
+        0.0,
+        3400020.0,
+        0.0,
+        -20.0
+      ],
+      "gdal_dtype": "Byte",
+      "gdal_nodata": 0.0,
+      "gdal_scale": null,
+      "gdal_offset": null,
+      "stac_raster_band": {
+        "nodata": 0,
+        "data_type": "uint8",
+        "spatial_resolution": 20
+      },
+      "pixel_window": [
+        1695,
+        134,
+        16,
+        16
+      ],
+      "raw_min": 4.0,
+      "raw_max": 7.0,
+      "unique_class_counts": {
+        "4": 56,
+        "5": 197,
+        "7": 3
+      },
+      "local_sample_sha256": "d5c09ee29a0f42486b304367aa7c49d47c934a7ef4a3c6d01ed0cb6cba1c7851"
+    }
+  },
+  "smoke_metric": {
+    "rule": "SCL 4/5 only, raw nodata removed, nonnegative reflectance, finite positive denominator; no crop truth",
+    "total_10m_pixels": 1024,
+    "valid_10m_pixels": 1012,
+    "valid_fraction": 0.98828125,
+    "median_ndvi": 0.37450793780333835,
+    "warning": "One public 320m square and one date verifies plumbing only; no oilseed-rape label, anomaly, yield, disease, or accuracy inference."
+  }
+}
