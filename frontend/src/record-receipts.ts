@@ -1,4 +1,6 @@
-import type { FarmEvent, Parcel, Verification, Visit } from './types.ts';
+import type { Analysis, AnalysisMethod, FarmEvent, Observation, Parcel, Verification, Visit } from './types.ts';
+
+export interface AnalysisReceiptPayload { method?: AnalysisMethod }
 
 export interface ParcelReceiptPayload {
   name: string;
@@ -170,11 +172,12 @@ export function validateVisitReceipt(raw: unknown, payload: VisitReceiptPayload)
 
 export function validateFollowUpVisitReceipt(
   raw: unknown,
-  source: { id: string; parcel_id: string },
+  source: { id: string; parcel_id: string; risk_id?: string | null },
   payload: FollowUpVisitReceiptPayload,
 ): Visit {
   requireReceipt(identifier(source.id) && identifier(source.parcel_id));
-  const receipt = visitReceipt(raw, { ...payload, parcel_id: source.parcel_id, risk_id: null });
+  requireReceipt(source.risk_id == null || identifier(source.risk_id));
+  const receipt = visitReceipt(raw, { ...payload, parcel_id: source.parcel_id, risk_id: source.risk_id ?? null });
   requireReceipt(identifier(receipt.source_verification_id) && receipt.source_verification_id === source.id);
   return receipt;
 }
@@ -210,6 +213,166 @@ export function validateFarmEventReceipt(raw: unknown, parcelId: string, payload
   return receipt as unknown as FarmEvent;
 }
 
+/** A run acknowledgment is not a healthy conclusion or a production signal. */
+export function validateAnalysisReceipt(
+  raw: unknown,
+  parcel: Pick<Parcel, 'id' | 'data_origin'>,
+  payload: AnalysisReceiptPayload,
+): Analysis {
+  try {
+    const receipt = baseReceipt(raw), method = payload.method === undefined ? 'statistical' : payload.method;
+    requireReceipt(identifier(parcel.id) && receipt.parcel_id === parcel.id &&
+      ['user', 'fixture'].includes(parcel.data_origin) && receipt.data_origin === parcel.data_origin &&
+      ['statistical', 'isolation_forest'].includes(method) && receipt.method === method &&
+      instant(receipt.evaluated_at) !== undefined && identifier(receipt.model_version) &&
+      Number.isSafeInteger(receipt.observation_count) && (receipt.observation_count as number) >= 0 &&
+      text(receipt.message, 4000, true));
+    requireReceipt(receipt.monitoring_eligible === false && Array.isArray(receipt.qualification_reasons) &&
+      receipt.qualification_reasons.every(reason => text(reason, 4000, true)));
+    if (parcel.data_origin === 'user') {
+      requireReceipt(receipt.mode === 'preview' && ['unverified', 'declared_only'].includes(receipt.qualification_status as string) &&
+        receipt.risk_id === null && ['candidate', 'not_flagged', 'insufficient_data', 'stale'].includes(receipt.preview_status as string));
+      const blocked = receipt.preview_status === 'insufficient_data' || receipt.preview_status === 'stale';
+      requireReceipt(receipt.status === (blocked ? 'blocked' : 'preview_only') &&
+        (receipt.preview_status === 'candidate' ? object(receipt.preview_evidence) : receipt.preview_evidence === null));
+    } else {
+      requireReceipt(receipt.mode === 'fixture_demo' && receipt.qualification_status === 'fixture_demo' &&
+        ['candidate', 'not_flagged', 'insufficient_data', 'stale'].includes(receipt.status as string) &&
+        receipt.preview_status === null && receipt.preview_evidence === null &&
+        (receipt.status === 'candidate' ? identifier(receipt.risk_id) : receipt.risk_id === null));
+    }
+    if ((receipt.preview_status ?? receipt.status) !== 'insufficient_data') requireReceipt((receipt.observation_count as number) > 0);
+    return receipt as unknown as Analysis;
+  } catch {
+    throw new Error('分析回执与本次地块或方法不一致，分析结果尚未确认。请保留当前页面并刷新分析记录核对，不要据此判断地块健康或安排巡田。');
+  }
+}
+
+function keysWithin(value: JsonObject, allowed: readonly string[]) {
+  requireReceipt(Object.keys(value).every(key => allowed.includes(key)));
+}
+function finite(value: unknown, minimum = -Infinity, maximum = Infinity): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum;
+}
+function observationText(value: unknown, max: number, submitted: boolean, required = false): string {
+  requireReceipt(typeof value === 'string');
+  const normalized = submitted ? normalizedText(value) : value;
+  requireReceipt(text(normalized, max, required) && normalized === normalizedText(normalized));
+  return normalized;
+}
+function observationTime(value: unknown, submitted: boolean): string {
+  const result = submitted ? submittedMicrosecondInstant(value) : instant(value);
+  requireReceipt(result !== undefined);
+  return result;
+}
+function exactJson(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) && Array.isArray(right)) return left.length === right.length && left.every((value, index) => exactJson(value, right[index]));
+  if (!object(left) || !object(right)) return false;
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length && keys.every(key => Object.hasOwn(right, key) && exactJson(left[key], right[key]));
+}
+
+// Mirror only the wire contract's field defaults and documented normalization.
+// Read records use a different, permissive guard. Nothing here mutates either
+// the submitted JSON or the response, or invents source/quality qualification.
+function observationContent(value: JsonObject, submitted: boolean): JsonObject {
+  const source = value.source;
+  requireReceipt(['sentinel2', 'sentinel1', 'weather', 'manual'].includes(source as string));
+  const features = value.features, quality = value.quality, provenance = value.provenance;
+  requireReceipt(object(features) && object(quality) && object(provenance));
+  const ranges: Record<string, [number, number]> = {
+    ndvi: [-1, 1], ndre: [-1, 1], evi: [-1, 3], ndwi: [-1, 1], vv_db: [-60, 20], vh_db: [-60, 20],
+    temperature_min_c: [-90, 65], temperature_max_c: [-90, 65], precipitation_mm: [0, 2000],
+  };
+  keysWithin(features, Object.keys(ranges));
+  const f: JsonObject = {};
+  for (const [key, number] of Object.entries(features)) if (number != null) {
+    requireReceipt(finite(number, ...ranges[key])); f[key] = number;
+  }
+  requireReceipt(Object.keys(f).length > 0);
+  const modalities: Record<string, readonly string[]> = { sentinel2: ['ndvi', 'ndre', 'evi', 'ndwi'], sentinel1: ['vv_db', 'vh_db'], weather: ['temperature_min_c', 'temperature_max_c', 'precipitation_mm'] };
+  if (source !== 'manual') keysWithin(f, modalities[source as string]);
+  if (finite(f.temperature_min_c) && finite(f.temperature_max_c)) requireReceipt(f.temperature_min_c <= f.temperature_max_c);
+  keysWithin(quality, ['usable', 'valid_fraction', 'cloud_fraction', 'flags']);
+  let usable = quality.usable;
+  // Pydantic's bool field accepts these explicit JSON values. Do not use JS
+  // truthiness ("false" is not true), and never coerce returned response fields.
+  if (submitted && typeof usable !== 'boolean') {
+    if (usable === 1 || typeof usable === 'string' && ['1', 'true', 't', 'yes', 'y', 'on'].includes(usable.toLowerCase())) usable = true;
+    else if (usable === 0 || typeof usable === 'string' && ['0', 'false', 'f', 'no', 'n', 'off'].includes(usable.toLowerCase())) usable = false;
+  }
+  requireReceipt(typeof usable === 'boolean' && finite(quality.valid_fraction, 0, 1));
+  const flags = submitted && quality.flags === undefined ? [] : quality.flags;
+  requireReceipt(Array.isArray(flags) && flags.length <= 20);
+  const q: JsonObject = { usable, valid_fraction: quality.valid_fraction, flags: flags.map(flag => observationText(flag, 100, submitted)) };
+  if (quality.cloud_fraction != null) { requireReceipt(finite(quality.cloud_fraction, 0, 1)); q.cloud_fraction = quality.cloud_fraction; }
+  if (source === 'sentinel2') requireReceipt(q.cloud_fraction !== undefined);
+
+  const textFields: Record<string, number> = { provider: 200, collection: 200, item_id: 200, processing_version: 200, license: 500, source_uri: 1500, support_note: 1000 };
+  keysWithin(provenance, [...Object.keys(textFields), 'temporal_support', 'usage_scope', 'retrieved_at', 'spatial_resolution_m', 'spatial_support', 'asset_checksums', 'parcel_geometry_sha256', 'parcel_mask_sha256']);
+  const p: JsonObject = {};
+  for (const [key, max] of Object.entries(textFields)) {
+    const required = ['provider', 'collection', 'item_id', 'processing_version'].includes(key);
+    if (required || provenance[key] != null) p[key] = observationText(provenance[key], max, submitted, required);
+  }
+  const temporal = submitted && provenance.temporal_support === undefined ? 'instantaneous' : provenance.temporal_support;
+  const scope = submitted && provenance.usage_scope === undefined ? 'unverified' : provenance.usage_scope;
+  requireReceipt(['instantaneous', 'daily_utc', 'daily_local_solar', 'daily_beijing'].includes(temporal as string) && ['unverified', 'parcel'].includes(scope as string));
+  p.temporal_support = temporal; p.usage_scope = scope;
+  if (provenance.retrieved_at != null) p.retrieved_at = observationTime(provenance.retrieved_at, submitted);
+  if (provenance.spatial_resolution_m != null) {
+    requireReceipt(finite(provenance.spatial_resolution_m, Number.MIN_VALUE, 1000000)); p.spatial_resolution_m = provenance.spatial_resolution_m;
+  }
+  const checksumInput = submitted && provenance.asset_checksums === undefined ? {} : provenance.asset_checksums;
+  requireReceipt(object(checksumInput) && Object.keys(checksumInput).length <= 20);
+  const checksums: JsonObject = Object.create(null);
+  for (const [name, hash] of Object.entries(checksumInput)) {
+    const key = observationText(name, 200, submitted, true), digest = observationText(hash, 64, submitted, true);
+    requireReceipt(/^[0-9a-f]{64}$/.test(digest)); checksums[key] = digest;
+  }
+  p.asset_checksums = checksums;
+  for (const key of ['parcel_geometry_sha256', 'parcel_mask_sha256']) if (provenance[key] != null) {
+    const hash = observationText(provenance[key], 64, submitted, true); requireReceipt(/^[0-9a-f]{64}$/.test(hash)); p[key] = hash;
+  }
+  if (provenance.spatial_support != null) {
+    const support = provenance.spatial_support;
+    requireReceipt(object(support));
+    keysWithin(support, ['kind', 'crs', 'bounds', 'pixel_size_m', 'scl_pixel_size_m', 'grid_degrees', 'total_pixels', 'valid_pixels']);
+    const kind = submitted && support.kind === undefined ? 'unknown' : support.kind;
+    requireReceipt(['parcel', 'coarse_grid', 'unknown'].includes(kind as string));
+    const s: JsonObject = { kind };
+    if (support.crs != null) s.crs = observationText(support.crs, 200, submitted, true);
+    if (support.bounds != null) { requireReceipt(Array.isArray(support.bounds) && support.bounds.length === 4 && support.bounds.every(number => finite(number))); s.bounds = [...support.bounds]; }
+    for (const key of ['pixel_size_m', 'scl_pixel_size_m']) if (support[key] != null) { requireReceipt(finite(support[key], Number.MIN_VALUE)); s[key] = support[key]; }
+    for (const key of ['total_pixels', 'valid_pixels']) if (support[key] != null) {
+      const raw = support[key], number = submitted && (typeof raw === 'string' || typeof raw === 'boolean') ? Number(raw) : raw;
+      requireReceipt(Number.isSafeInteger(number) && (number as number) >= (key === 'total_pixels' ? 1 : 0)); s[key] = number;
+    }
+    if (support.grid_degrees != null) {
+      const grid = support.grid_degrees; requireReceipt(object(grid)); keysWithin(grid, ['latitude', 'longitude']);
+      requireReceipt(Object.values(grid).every(number => finite(number))); s.grid_degrees = { ...grid };
+    }
+    p.spatial_support = s;
+  }
+  return { observed_at: observationTime(value.observed_at, submitted), source, source_record_id: observationText(value.source_record_id, 200, submitted, true), features: f, quality: q, provenance: p };
+}
+
+/** Bind a single import to its parcel and complete normalized submitted content. */
+export function validateObservationReceipt(raw: unknown, parcelId: string, payload: Record<string, unknown>): Observation {
+  try {
+    const receipt = baseReceipt(raw);
+    requireReceipt(identifier(parcelId) && receipt.parcel_id === parcelId && receipt.data_origin === 'user' &&
+      instant(receipt.ingested_at) !== undefined && object(payload));
+    keysWithin(payload, ['observed_at', 'source', 'source_record_id', 'features', 'quality', 'provenance']);
+    requireReceipt(exactJson(observationContent(receipt, false), observationContent(payload, true)));
+    return receipt as unknown as Observation;
+  } catch {
+    // This endpoint rejects duplicates, rather than replaying a saved receipt.
+    throw new Error('观测回执与本次地块或内容不一致，导入结果尚未确认。请保留原 JSON 并刷新观测记录核对；原记录可能已保存，不要盲目重复导入或更改来源编号。');
+  }
+}
+
 function draftReceipt<T>(validate: () => T): T {
   try { return validate(); }
   catch {
@@ -231,7 +394,7 @@ function submittedMicrosecondInstant(value: unknown): string | undefined {
 /** Confirm the complete immutable submission before clearing its durable draft. */
 export function validateVerificationReceipt(
   raw: unknown,
-  original: { visit_id: string; parcel_id: string; data_origin?: 'user' | 'fixture' },
+  original: { visit_id: string; parcel_id: string; data_origin?: 'user' | 'fixture'; risk_id?: string | null; source_verification_id?: string | null },
   payload: VerificationReceiptPayload,
 ): Verification {
   return draftReceipt(() => {
@@ -256,6 +419,13 @@ export function validateVerificationReceipt(
     requireReceipt(original.data_origin === undefined || original.data_origin === 'user' || original.data_origin === 'fixture');
     if ('data_origin' in receipt && original.data_origin !== undefined) requireReceipt(receipt.data_origin === original.data_origin);
     if ('label_source' in receipt) requireReceipt(receipt.label_source === 'field_report_unadjudicated');
+    // A field report acknowledges receipt, never diagnosis or resolution. Old
+    // immutable replays predate these fields and must remain usable.
+    if ('disposition' in receipt) requireReceipt(receipt.disposition === 'review_required');
+    for (const key of ['risk_id', 'source_verification_id'] as const) {
+      if (key in receipt) requireReceipt(receipt[key] === null || identifier(receipt[key]));
+      if (key in original) immutableOptionalText(receipt[key], original[key], 200, true);
+    }
     return receipt as unknown as Verification;
   });
 }

@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import ValidationError
 from app.domain.models import ParcelCreate, ObservationCreate, approximate_area_ha
-from app.domain.detection import evaluate, MODEL_VERSION, eligible
+from app.domain.detection import evaluate, MODEL_VERSION, quality_eligible, qualification
 from app.adapters.local_bundle import geometry_sha256
 from app.application.source_imports import PublicSampleImports
 
@@ -36,7 +36,30 @@ class FieldService:
         with self.store.connect() as c:
             if parcel_id: self.required(c,'parcels',parcel_id)
             result=self.store.all(c,table,parcel_id)
+            if table=='risks': result=[self._risk_view(row) for row in result]
+            elif table=='verifications': result=[self._report_view(c,row) for row in result]
+            elif table=='visits': result=[self._visit_view(c,row) for row in result]
             return sorted(result,key=lambda x:x.get('observed_at',x['created_at']))
+
+    @staticmethod
+    def _risk_view(risk):
+        # Historical "verified" meant only that a field report was received.
+        # Correct the read model, never migrate saved evidence or old receipts.
+        legacy=risk.get('status')=='verified'
+        return {**risk,'status':'review_required' if legacy else risk['status'],
+                **({'legacy_status':'verified'} if legacy else {}),
+                'disposition':'unresolved','mode':'fixture_demo' if risk['data_origin']=='fixture' else 'preview',
+                'monitoring_eligible':False}
+
+    def _report_view(self,c,report):
+        visit=self.required(c,'visits',report['visit_id'])
+        return {**report,'disposition':'review_required','risk_id':self._visit_risk_id(c,visit),
+                **({'source_verification_id':visit['source_verification_id']} if visit.get('source_verification_id') else {})}
+
+    def _visit_view(self,c,visit):
+        # Old follow-ups stored a null risk_id. Recover their event link through
+        # source reports for reads only, preserving immutable creation receipts.
+        return {**visit,'risk_id':self._visit_risk_id(c,visit)} if visit.get('source_verification_id') else visit
 
     def parcel(self,parcel_id):
         with self.store.connect() as c: return self.required(c,'parcels',parcel_id)
@@ -163,19 +186,29 @@ class FieldService:
     def analyse(self,parcel_id,method):
         with self.store.connect(write=True) as c:
             p=self.required(c,'parcels',parcel_id)
-            result=evaluate(self.store.all(c,'observations',parcel_id),method)
+            observations=self.store.all(c,'observations',parcel_id)
+            trust=qualification(observations,geometry_sha256(p['geometry']),fixture=p['data_origin']=='fixture')
+            result=evaluate(observations,method,mode=trust['mode'])
             risk_id=None
-            if result['risk']:
+            # Declared metrics can be explored, never promoted into monitoring.
+            # Only the explicit, separately labelled fixture walkthrough creates
+            # synthetic candidates until a qualified production source exists.
+            if result['risk'] and trust['mode']=='fixture_demo':
                 risk=result['risk']
-                # Stable uniqueness makes repeated runs safe and preserves a verified candidate.
+                # Repeated runs preserve the same event and its review state.
                 existing=c.execute('SELECT id FROM risks WHERE parcel_id=? AND observation_id=? AND method=? AND model_version=?',(parcel_id,risk['observation_id'],method,MODEL_VERSION)).fetchone()
                 if existing:
                     risk_id=existing['id']
                 else:
-                    r=entity('risk',parcel_id=parcel_id,method=method,model_version=MODEL_VERSION,status='open',data_origin=p['data_origin'],**risk)
+                    r=entity('risk',parcel_id=parcel_id,method=method,model_version=MODEL_VERSION,status='open',disposition='unresolved',mode='fixture_demo',monitoring_eligible=False,data_origin=p['data_origin'],**risk)
                     self.store.insert(c,'risks',r,parcel_id=parcel_id,observation_id=r['observation_id'],method=method,model_version=MODEL_VERSION)
                     risk_id=r['id']
-            run=entity('run',parcel_id=parcel_id,method=method,model_version=MODEL_VERSION,evaluated_at=now_iso(),status=result['status'],risk_id=risk_id,observation_count=result['observation_count'],message=result['message'],data_origin=p['data_origin'])
+            preview=trust['mode']=='preview'
+            status=('preview_only' if result['status'] in {'candidate','not_flagged'} else 'blocked') if preview else result['status']
+            message=('仅供探索预览：来源、地块映射和质量依据尚未独立核实，不生成正式监测候选。' if preview else '开发模拟演示，非真实监测。')+result['message']
+            run=entity('run',parcel_id=parcel_id,method=method,model_version=MODEL_VERSION,evaluated_at=now_iso(),status=status,risk_id=risk_id,observation_count=result['observation_count'],message=message,data_origin=p['data_origin'],**trust,
+                       preview_status=result['status'] if preview else None,
+                       preview_evidence=result['risk']['evidence'] if preview and result['risk'] else None)
             return self.store.insert(c,'analyses',run,parcel_id=parcel_id)
 
     def create_visit(self,payload,idempotency_key=None):
@@ -187,13 +220,12 @@ class FieldService:
             if payload.risk_id:
                 risk=self.required(c,'risks',payload.risk_id)
                 if risk['parcel_id']!=p['id']: raise ServiceError(422,'parcel_mismatch','风险候选不属于此地块')
-                if risk['status']=='verified': raise ServiceError(409,'risk_verified','此候选已核验，可建立无关联候选的复查任务。')
-                if c.execute('SELECT id FROM visits WHERE risk_id=? AND status=?',(payload.risk_id,'pending')).fetchone():
+                if self._pending_risk_visit(c,payload.risk_id):
                     raise ServiceError(409,'duplicate_visit','此风险候选已有待完成巡田任务')
             visit=entity('visit',**payload.model_dump(mode='json'),status='pending',data_origin=p['data_origin'],plan_revision=0)
             self.store.insert(c,'visits',visit,parcel_id=p['id'],risk_id=payload.risk_id,status='pending')
             if payload.risk_id:
-                risk['status']='assigned';self.store.update(c,'risks',risk)
+                risk['status']='assigned';risk['disposition']='unresolved';self.store.update(c,'risks',risk)
             if idempotency_key is not None:
                 self.store.insert_receipt(c,idempotency_key,'create_visit',payload.parcel_id,request_json,visit)
             return visit
@@ -225,6 +257,47 @@ class FieldService:
             raise ServiceError(422,'invalid_follow_up_source','原核验缺少有效的含时区观察时间，不能建立或提交复查。')
         return source,parcel,observed_at
 
+    def _visit_risk_id(self,c,visit):
+        return self._visit_lineage(c,visit)[0]
+
+    def _visit_lineage(self,c,visit):
+        """Resolve the event through both new and legacy source-linked visits.
+
+        Never trust a source id alone: every edge is validated against indexed
+        parcel/visit identities, origins and completed execution. Detect cycles
+        and conflicting event links instead of silently dropping lineage.
+        """
+        parcel_id=visit['parcel_id'];origin=visit['data_origin']
+        seen=set();risk_ids=set();claims=[];source_root=None
+        while True:
+            if visit['id'] in seen:
+                raise ServiceError(422,'invalid_follow_up_source','复查来源形成循环，不能确认关联事件。')
+            seen.add(visit['id'])
+            if visit.get('risk_id'): risk_ids.add(visit['risk_id'])
+            if not visit.get('source_verification_id'): break
+            source,_,_=self._follow_up_source(c,visit['source_verification_id'],parcel_id)
+            source_root=source['id']
+            if 'risk_id' in source: claims.append(source['risk_id'])
+            visit=self.required(c,'visits',source['visit_id'])
+        risk_id=next(iter(risk_ids),None)
+        if len(risk_ids)>1 or any(claim!=risk_id for claim in claims):
+            raise ServiceError(422,'invalid_follow_up_source','复查与原报告的关联事件不一致，请核对原记录。')
+        if risk_id:
+            risk=self.required(c,'risks',risk_id)
+            if risk['parcel_id']!=parcel_id or risk['data_origin']!=origin:
+                raise ServiceError(422,'invalid_follow_up_source','复查关联事件与地块或来源不一致，请核对原记录。')
+        return risk_id,source_root
+
+    def _pending_risk_visit(self,c,risk_id):
+        # Include historical null-risk follow-ups. BEGIN IMMEDIATE serializes
+        # this guard with creates/completions; the existing index also protects
+        # all newly linked pending visits across ordinary/follow-up endpoints.
+        parcel_id=self.required(c,'risks',risk_id)['parcel_id']
+        for row in c.execute("SELECT data FROM visits WHERE status='pending' AND parcel_id=?",(parcel_id,)):
+            visit=json.loads(row['data'])
+            if self._visit_risk_id(c,visit)==risk_id: return True
+        return False
+
     def create_follow_up_visit(self,verification_id,payload,idempotency_key=None):
         request_json=self.idempotency_request(payload,idempotency_key)
         with self.store.connect(write=True) as c:
@@ -237,8 +310,25 @@ class FieldService:
             pending=c.execute("SELECT data FROM visits WHERE status='pending'").fetchall()
             if any(json.loads(row['data']).get('source_verification_id')==source['id'] for row in pending):
                 raise ServiceError(409,'duplicate_follow_up_visit','此核验已有待完成复查，请查看现有任务。')
-            visit=entity('visit',parcel_id=parcel['id'],risk_id=None,source_verification_id=source['id'],**payload.model_dump(mode='json'),status='pending',data_origin=parcel['data_origin'],plan_revision=0)
-            self.store.insert(c,'visits',visit,parcel_id=parcel['id'],risk_id=None,status='pending')
+            risk_id,source_root=self._visit_lineage(c,self.required(c,'visits',source['visit_id']))
+            source_root=source_root or source['id']
+            if 'risk_id' in source and source['risk_id']!=risk_id:
+                raise ServiceError(422,'invalid_follow_up_source','原报告与巡田的关联事件不一致，请核对原记录。')
+            if risk_id and self._pending_risk_visit(c,risk_id):
+                raise ServiceError(409,'duplicate_visit','此关联事件已有待完成巡田或复查，请查看现有任务。')
+            # An unlinked field report also has a single follow-up chain. Do
+            # not create sibling work from an older report while a descendant
+            # is pending, even when there is no satellite candidate at all.
+            for row in pending:
+                existing=json.loads(row['data'])
+                if existing['parcel_id']==parcel['id'] and existing.get('source_verification_id') and self._visit_lineage(c,existing)[1]==source_root:
+                    raise ServiceError(409,'duplicate_follow_up_visit','此报告链已有待完成复查，请查看现有任务。')
+            visit=entity('visit',parcel_id=parcel['id'],risk_id=risk_id,source_verification_id=source['id'],**payload.model_dump(mode='json'),status='pending',data_origin=parcel['data_origin'],plan_revision=0)
+            self.store.insert(c,'visits',visit,parcel_id=parcel['id'],risk_id=risk_id,status='pending')
+            if risk_id:
+                risk=self.required(c,'risks',risk_id)
+                risk['status']='assigned';risk['disposition']='unresolved'
+                self.store.update(c,'risks',risk)
             if idempotency_key is not None:
                 self.store.insert_receipt(c,idempotency_key,'create_follow_up_visit',verification_id,request_json,visit)
             return visit
@@ -258,9 +348,13 @@ class FieldService:
             visit['plan_revision']=revision+1
             visit['plan_updated_at']=now_iso()
             self.store.update(c,'visits',visit)
+            # A new receipt must match the identity the form read, including
+            # inferred legacy event links. Keep the stored visit and all prior
+            # receipts unchanged; only snapshot the current read projection.
+            result=self._visit_view(c,visit)
             if idempotency_key is not None:
-                self.store.insert_receipt(c,idempotency_key,'update_visit_plan',visit_id,request_json,visit)
-            return visit
+                self.store.insert_receipt(c,idempotency_key,'update_visit_plan',visit_id,request_json,result)
+            return result
 
     def upload_photo(self,visit_id,content_type,raw):
         if content_type not in {'image/jpeg','image/png','image/webp'}:
@@ -319,20 +413,20 @@ class FieldService:
             parcel=self.required(c,'parcels',visit['parcel_id'])
             self.require_season(parcel,payload.observed_at.astimezone(ZoneInfo('Asia/Shanghai')).date())
             if visit.get('source_verification_id'):
-                if visit.get('risk_id') is not None:
-                    raise ServiceError(422,'invalid_follow_up_source','复查不能重新关联原风险候选，请核对原记录。')
                 _,_,source_observed_at=self._follow_up_source(c,visit['source_verification_id'],visit['parcel_id'])
                 if payload.observed_at<source_observed_at:
                     raise ServiceError(422,'verification_before_source','复查观察时间不能早于原核验的观察时间，请检查观察时间。')
-            if visit.get('risk_id'):
-                candidate=self.required(c,'risks',visit['risk_id'])
+            risk_id=self._visit_risk_id(c,visit)
+            if risk_id:
+                candidate=self.required(c,'risks',risk_id)
                 trigger=self.required(c,'observations',candidate['observation_id'])
                 if payload.observed_at<datetime.fromisoformat(trigger['observed_at']):
                     raise ServiceError(422,'verification_before_observation','现场核验时间不能早于关联候选的触发观测，请检查观察时间。')
             for photo_id in payload.photo_ids:
                 p=self.required(c,'photos',photo_id)
                 if p['visit_id']!=visit_id: raise ServiceError(422,'photo_mismatch','核验照片必须属于本次巡田')
-            result=entity('verification',visit_id=visit_id,parcel_id=visit['parcel_id'],**request,data_origin=visit['data_origin'],label_source='field_report_unadjudicated')
+            result=entity('verification',visit_id=visit_id,parcel_id=visit['parcel_id'],**request,data_origin=visit['data_origin'],label_source='field_report_unadjudicated',disposition='review_required',risk_id=risk_id,
+                          **({'source_verification_id':visit['source_verification_id']} if visit.get('source_verification_id') else {}))
             self.store.insert(c,'verifications',result,visit_id=visit_id,parcel_id=visit['parcel_id'])
             # Only submitted references become evidence; discard unused staged uploads.
             for row in c.execute('SELECT id FROM photos WHERE visit_id=?',(visit_id,)).fetchall():
@@ -343,8 +437,8 @@ class FieldService:
                     c.execute('DELETE FROM photos WHERE id=?',(row['id'],))
             visit['status']='completed';visit['completed_at']=now_iso()
             self.store.update(c,'visits',visit,status='completed')
-            if visit.get('risk_id'):
-                risk=self.required(c,'risks',visit['risk_id']);risk['status']='verified';risk['verification_id']=result['id']
+            if risk_id:
+                risk=self.required(c,'risks',risk_id);risk['status']='review_required';risk['disposition']='unresolved';risk['verification_id']=result['id']
                 self.store.update(c,'risks',risk)
             return result
 
@@ -363,17 +457,34 @@ class FieldService:
 
     def dashboard(self):
         with self.store.connect() as c:
-            parcels=self.store.all(c,'parcels');risks=self.store.all(c,'risks');visits=self.store.all(c,'visits');verifications=self.store.all(c,'verifications')
+            parcels=self.store.all(c,'parcels');risks=[self._risk_view(r) for r in self.store.all(c,'risks')];visits=self.store.all(c,'visits');verifications=[self._report_view(c,v) for v in self.store.all(c,'verifications')]
             now=datetime.now(timezone.utc)
             output=[]
             for p in parcels:
                 obs=sorted(self.store.all(c,'observations',p['id']),key=lambda o:o['observed_at'])
-                # Latest usable across modalities is not a statement about crop health.
-                valid=[o for o in obs if o['quality']['usable'] and o['quality']['valid_fraction']>=0.6 and (o['source']!='sentinel2' or o['quality'].get('cloud_fraction',1)<=0.4)]
-                latest=valid[-1]['observed_at'] if valid else None
-                status='missing' if not obs else 'quality_limited' if not valid else 'stale' if now-datetime.fromisoformat(latest)>timedelta(days=14) else 'available'
-                output.append({**p,'latest_observed_at':latest,'observation_count':len(obs),'data_status':status,'open_risk_count':sum(r['parcel_id']==p['id'] and r['status']!='verified' for r in risks)})
-            return {'parcel_count':len(parcels),'open_risk_count':sum(r['status']!='verified' for r in risks),'pending_visit_count':sum(v['status']=='pending' for v in visits),'verification_count':len(verifications),'parcels':output,'recent_verifications':sorted(verifications,key=lambda v:v['created_at'],reverse=True)[:20]}
+                optical=[o for o in obs if o['source']=='sentinel2']
+                weather=[o for o in obs if o['source']=='weather']
+                def freshness(rows,optical=False):
+                    valid=[o for o in rows if (quality_eligible(o) if optical else o['quality']['usable'] and o['quality']['valid_fraction']>=.6) and datetime.fromisoformat(o['observed_at'])<=now]
+                    latest=max(valid,key=lambda o:datetime.fromisoformat(o['observed_at']))['observed_at'] if valid else None
+                    status='missing' if not rows else 'quality_limited' if not valid else 'stale' if now-datetime.fromisoformat(latest)>timedelta(days=14) else 'available'
+                    return latest,status
+                optical_at,optical_status=freshness(optical,True)
+                weather_at,weather_status=freshness(weather)
+                trust=qualification(obs,geometry_sha256(p['geometry']),fixture=p['data_origin']=='fixture')
+                preview=evaluate(obs,'statistical',now,mode=trust['mode'])
+                monitoring_status='fixture_demo' if trust['mode']=='fixture_demo' else 'preview_only' if preview['status'] in {'candidate','not_flagged'} else 'blocked'
+                output.append({**p,
+                    # Legacy aliases now refer to the optical signal only. A
+                    # recent weather record must never renew the NDVI panel.
+                    'latest_observed_at':optical_at,'data_status':optical_status,
+                    'latest_optical_observed_at':optical_at,'optical_data_status':optical_status,
+                    'latest_weather_observed_at':weather_at,'weather_data_status':weather_status,
+                    'monitoring_status':monitoring_status,'qualification_status':trust['qualification_status'],'monitoring_eligible':False,
+                    'observation_count':len(obs),'open_risk_count':sum(r['parcel_id']==p['id'] and r['disposition']=='unresolved' for r in risks),
+                    'review_required_count':sum(v['parcel_id']==p['id'] for v in verifications)})
+            return {'parcel_count':len(parcels),'open_risk_count':sum(r['disposition']=='unresolved' for r in risks),'pending_visit_count':sum(v['status']=='pending' for v in visits),'verification_count':len(verifications),
+                    'review_required_count':len(verifications),'parcels':output,'recent_verifications':sorted(verifications,key=lambda v:v['created_at'],reverse=True)[:20]}
 
     def seed_fixture(self):
         with self.store.connect(write=True) as c:

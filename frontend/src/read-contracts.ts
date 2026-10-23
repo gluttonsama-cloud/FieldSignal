@@ -26,6 +26,9 @@ function optionalNumber(row: JsonObject, key: string, read: string, path: string
   const value = row[key];
   if (value != null && (typeof value !== 'number' || !Number.isFinite(value))) invalid(read, `${path}.${key}`, '有限数值');
 }
+function optionalBoolean(row: JsonObject, key: string, read: string, path: string) {
+  if (row[key] != null && typeof row[key] !== 'boolean') invalid(read, `${path}.${key}`, '布尔值');
+}
 function strings(value: unknown, read: string, path: string) {
   const items = array(value, read, path);
   for (let index = 0; index < items.length; index++) string(items[index], read, `${path}[${index}]`);
@@ -46,8 +49,11 @@ function parcel(row: JsonObject, path: string) {
   const read = '地块总览';
   string(row.id, read, `${path}.id`);
   optionalStrings(row, ['name', 'region', 'crop', 'season', 'sowing_date', 'cultivar', 'data_origin', 'created_at',
-    'latest_observed_at', 'boundary_source', 'boundary_reference', 'boundary_crs', 'area_method', 'data_status'], read, path);
-  for (const key of ['area_ha', 'observation_count', 'open_risk_count']) optionalNumber(row, key, read, path);
+    'latest_observed_at', 'boundary_source', 'boundary_reference', 'boundary_crs', 'area_method', 'data_status',
+    'latest_optical_observed_at', 'latest_weather_observed_at', 'optical_data_status', 'weather_data_status',
+    'monitoring_status', 'qualification_status'], read, path);
+  for (const key of ['area_ha', 'observation_count', 'open_risk_count', 'review_required_count']) optionalNumber(row, key, read, path);
+  optionalBoolean(row, 'monitoring_eligible', read, path);
   if (row.geometry === undefined) return;
   const geometry = object(row.geometry, read, `${path}.geometry`);
   optionalStrings(geometry, ['type'], read, `${path}.geometry`);
@@ -68,7 +74,8 @@ function verification(row: JsonObject, path: string, read = '核查记录') {
   identity(row, read, path);
   string(row.visit_id, read, `${path}.visit_id`);
   strings(row.photo_ids, read, `${path}.photo_ids`);
-  optionalStrings(row, ['observed_at', 'label', 'note', 'client_submission_id', 'created_at'], read, path);
+  optionalStrings(row, ['observed_at', 'label', 'note', 'client_submission_id', 'created_at',
+    'disposition', 'risk_id', 'source_verification_id', 'label_source'], read, path);
 }
 
 /** Validate the whole snapshot before the caller publishes any of its parts. */
@@ -82,6 +89,7 @@ export function validateCoreRead(raw: readonly unknown[]): CoreRead {
     const value = dashboard[key];
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) invalid('地块总览', `dashboard.${key}`, '非负安全整数');
   }
+  optionalNumber(dashboard, 'review_required_count', '地块总览', 'dashboard');
   rows(dashboard.parcels, '地块总览', 'dashboard.parcels', parcel);
   if (dashboard.recent_verifications !== undefined) {
     rows(dashboard.recent_verifications, '地块总览', 'dashboard.recent_verifications', (row, path) => verification(row, path, '地块总览'));
@@ -89,7 +97,9 @@ export function validateCoreRead(raw: readonly unknown[]): CoreRead {
   rows(raw[2], '候选记录', 'risks', (row, path) => {
     identity(row, '候选记录', path);
     object(row.evidence, '候选记录', `${path}.evidence`);
-    optionalStrings(row, ['observation_id', 'status', 'priority', 'summary', 'method', 'model_version', 'created_at'], '候选记录', path);
+    optionalStrings(row, ['observation_id', 'status', 'priority', 'summary', 'method', 'model_version', 'created_at',
+      'disposition', 'legacy_status', 'mode'], '候选记录', path);
+    optionalBoolean(row, 'monitoring_eligible', '候选记录', path);
   });
   rows(raw[3], '巡田任务', 'visits', (row, path) => {
     identity(row, '巡田任务', path);
@@ -132,8 +142,12 @@ export function validateObservationRead(raw: unknown, parcelId?: string): Observ
 export function validateAnalysisRead(raw: unknown, parcelId?: string): Analysis[] {
   rows(raw, '分析记录', 'analyses', (row, path) => {
     identity(row, '分析记录', path, parcelId);
-    optionalStrings(row, ['method', 'evaluated_at', 'status', 'risk_id', 'message'], '分析记录', path);
+    optionalStrings(row, ['method', 'evaluated_at', 'status', 'risk_id', 'message', 'mode',
+      'qualification_status', 'preview_status'], '分析记录', path);
     optionalNumber(row, 'observation_count', '分析记录', path);
+    optionalBoolean(row, 'monitoring_eligible', '分析记录', path);
+    if (row.qualification_reasons != null) strings(row.qualification_reasons, '分析记录', `${path}.qualification_reasons`);
+    if (row.preview_evidence != null) object(row.preview_evidence, '分析记录', `${path}.preview_evidence`);
   });
   return raw as Analysis[];
 }

@@ -14,16 +14,25 @@ export interface ObservationBatchReceipt {
   observations: { id: string; source: string; source_record_id: string; observed_at: string; status: 'created' | 'existing' }[];
 }
 
-// Normalized Python datetimes preserve microseconds, while Date.parse alone
-// discards them. Compare the UTC second and the server's six-digit precision.
-function observationInstant(value: unknown): string | undefined {
+const normalizedText = (value: string): string => value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, '');
+const identifier = (value: unknown): value is string => typeof value === 'string' && normalizedText(value).length > 0 && value === normalizedText(value);
+
+// Date.parse silently rolls February 30 forward and loses microseconds. Check
+// calendar components first; only submitted fractions may be truncated by the
+// server. A changed fractional digit in a receipt must not be ignored.
+function observationInstant(value: unknown, submitted = true): string | undefined {
   if(typeof value!=='string')return;
-  const parts=value.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:?\d{2})$/i);
+  const parts=value.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:[.,](\d+))?)?(Z|[+-](\d{2})(?::?(\d{2}))?)$/i);
   if(!parts)return;
-  const zone=parts[4].length===5?`${parts[4].slice(0,3)}:${parts[4].slice(3)}`:parts[4];
-  const second=Date.parse(`${parts[1]}T${parts[2]}${zone}`);
-  if(!Number.isFinite(second))return;
-  return `${second}:${(parts[3]||'').padEnd(6,'0').slice(0,6)}`;
+  const [year,month,day,hour,minute,second]=parts.slice(1,7).map(value=>Number(value||0));
+  const zoneHour=Number(parts[9]||0),zoneMinute=Number(parts[10]||0);
+  const leap=year%4===0&&(year%100!==0||year%400===0);
+  const days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];
+  if(year<1||month<1||month>12||day<1||day>days[month-1]||hour>23||minute>59||second>59||zoneHour>23||zoneMinute>59)return;
+  const date=new Date(0);date.setUTCFullYear(year,month-1,day);date.setUTCHours(hour,minute,second,0);
+  const offset=(zoneHour*60+zoneMinute)*(parts[8][0]==='-'?-1:1);
+  const fraction=submitted?(parts[7]||'').slice(0,6):parts[7]||'';
+  return `${date.getTime()/1000-offset*60}:${fraction.replace(/0+$/,'')}`;
 }
 
 export function observationBatchError(bundle: ObservationBundle): string {
@@ -32,7 +41,7 @@ export function observationBatchError(bundle: ObservationBundle): string {
   const keys = new Set<string>();
   for (const [index, record] of bundle.observations.entries()) {
     if(!observationInstant(record.observed_at))return `第 ${index+1} 条的时间不是可核对的带时区 ISO 日期时间；请重新生成规范化文件后导入。`;
-    const key = JSON.stringify([String(record.source).trim(), String(record.source_record_id).trim()]);
+    const key = JSON.stringify([record.source, normalizedText(String(record.source_record_id))]);
     if (keys.has(key)) return `第 ${index + 1} 条与本批另一条使用相同来源记录编号；请在本地核对，不能自动去重或覆盖。`;
     keys.add(key);
   }
@@ -61,18 +70,18 @@ export function observationBatchReview(bundle: ObservationBundle, parcel: { id: 
 export function validateObservationBatchReceipt(value: unknown, parcelId: string, bundle: ObservationBundle): ObservationBatchReceipt {
   const receipt=value as ObservationBatchReceipt | null;
   const invalid=()=>new Error('服务响应与本次批次不一致，导入结果尚未确认。请保留原批次并原样重试核对。');
-  if (!receipt || typeof receipt.id!=='string' || !receipt.id || receipt.parcel_id!==parcelId || receipt.bundle_id!==bundle.bundle_id.trim() ||
-      receipt.bundle_sha256!==bundle.bundle_sha256 || receipt.processing_version!==bundle.processing_version.trim() ||
-      typeof receipt.created_at!=='string' || !Number.isFinite(Date.parse(receipt.created_at)) ||
+  if (!receipt || !identifier(receipt.id) || !identifier(parcelId) || receipt.parcel_id!==parcelId || receipt.bundle_id!==normalizedText(bundle.bundle_id) ||
+      receipt.bundle_sha256!==bundle.bundle_sha256 || receipt.processing_version!==normalizedText(bundle.processing_version) ||
+      !observationInstant(receipt.created_at,false) ||
       !Array.isArray(receipt.observations) || receipt.observations.length!==bundle.observations.length ||
-      !Number.isInteger(receipt.created_count) || receipt.created_count<0 || !Number.isInteger(receipt.existing_count) || receipt.existing_count<0 ||
+      !Number.isSafeInteger(receipt.created_count) || receipt.created_count<0 || !Number.isSafeInteger(receipt.existing_count) || receipt.existing_count<0 ||
       receipt.created_count+receipt.existing_count!==bundle.observations.length) throw invalid();
   const ids=new Set<string>();let created=0,existing=0;
   for (const [index,row] of receipt.observations.entries()) {
     const expected=bundle.observations[index];
-    if (!row || typeof row.id!=='string' || !row.id || ids.has(row.id) || row.source!==String(expected.source).trim() ||
-        row.source_record_id!==String(expected.source_record_id).trim() || !observationInstant(row.observed_at) ||
-        observationInstant(row.observed_at)!==observationInstant(expected.observed_at) || !['created','existing'].includes(row.status)) throw invalid();
+    if (!row || !identifier(row.id) || ids.has(row.id) || row.source!==expected.source ||
+        row.source_record_id!==normalizedText(String(expected.source_record_id)) || !observationInstant(row.observed_at,false) ||
+        observationInstant(row.observed_at,false)!==observationInstant(expected.observed_at) || !['created','existing'].includes(row.status)) throw invalid();
     ids.add(row.id);
     if (row.status==='created') created++; else existing++;
   }

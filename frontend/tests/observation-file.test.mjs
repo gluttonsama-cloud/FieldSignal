@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { parseObservationInput, observationImportSummary } from '../src/observation-import.ts';
 import { esc } from '../src/display.ts';
 import { harness, deferred } from './helpers/ui-harness.mjs';
+import { syntheticObservationPayload, syntheticObservationReceipt } from './helpers/analysis-observation-receipts.mjs';
 
 // Run the production change/input/submit handlers. These DOM stubs cover async
 // ownership and disabled-fieldset FormData semantics, not browser/visual QA.
-const original = '{"source_record_id":"original","features":{"ndvi":0.2}}';
-const firstJson = '{"source_record_id":"first","features":{"ndvi":0.3}}';
-const secondJson = '{"source_record_id":"second","features":{"ndvi":0.4}}';
+const original = JSON.stringify({ ...syntheticObservationPayload('original'), features: { ndvi: 0.2 } });
+const firstJson = JSON.stringify({ ...syntheticObservationPayload('first'), features: { ndvi: 0.3 } });
+const secondJson = JSON.stringify({ ...syntheticObservationPayload('second'), features: { ndvi: 0.4 } });
 
 function observationUi() {
   const ui = harness(), calls = [];
@@ -23,7 +24,7 @@ function observationUi() {
     }
     get(key) { return this.values[key] ?? null; }
   };
-  ui.context.post = async (path, body) => { calls.push({ path, body }); return { id: 'observation-1' }; };
+  ui.context.post = async (path, body) => { calls.push({ path, body }); return syntheticObservationReceipt(body, 'p1'); };
   return { ...ui, calls };
 }
 
@@ -242,7 +243,7 @@ test('explicit submit captures selected JSON before locking fields and uses the 
   assert.equal(form.submit.disabled, true);
   await ui.submit(form);
   assert.equal(ui.calls.length, 1);
-  pending.resolve({ id: 'selected-observation' });
+  pending.resolve(syntheticObservationReceipt(ui.calls[0].body, 'p1'));
   await done;
   assert.equal(ui.modal.open, false);
   assert.equal(form.observationFields.disabled, false);
@@ -270,7 +271,7 @@ test('POST failure unlocks fields and preserves JSON for an explicit retry', asy
   assert.equal(form.submit.disabled, false);
   assert.equal(form.dataset.submitting, undefined);
   assert.match(ui.modal.error.textContent, /Import failed/);
-  ui.context.post = async (path, body) => { ui.calls.push({ path, body }); return { id: 'retry-result' }; };
+  ui.context.post = async (path, body) => { ui.calls.push({ path, body }); return syntheticObservationReceipt(body, 'p1'); };
   await ui.submit(form);
   assert.equal(ui.calls.length, 2);
   assert.equal(JSON.stringify(ui.calls[1].body), secondJson);
@@ -323,7 +324,7 @@ function normalizedBundle(count = 2) {
       source: i ? 'weather' : 'sentinel2', source_record_id: `synthetic-${i}`,
       observed_at: '2026-10-01T00:00:00+00:00',
       features: i ? { temperature_min_c: null, precipitation_mm: 0 } : { ndvi: 0.4 },
-      quality: { usable: !i, valid_fraction: i ? 2/3 : 0.8, flags: i ? ['coarse_grid_context_only','missing_parameters'] : ['scl45_only'] },
+      quality: { usable: !i, valid_fraction: i ? 2/3 : 0.8, ...(i ? {} : {cloud_fraction:0.1}), flags: i ? ['coarse_grid_context_only','missing_parameters'] : ['scl45_only'] },
       provenance: {
         provider: 'Synthetic test provider', collection: 'test', item_id: `test-${i}`,
         processing_version: 'local-bundle-v1-scl45-median', retrieved_at: '2026-10-02T00:00:00Z',
@@ -442,7 +443,7 @@ test('failed selected-record POST retains exact choice and locks changes until r
   pending.reject(new Error('test network loss'));await posted;
   assert.equal(form.submit.disabled,false);assert.equal(form.choices.hidden,false);
   assert.equal(ui.modal.open,true);assert.equal(ui.calls.length,1);
-  ui.context.post=async(path,body)=>{ui.calls.push({path,body});return {id:'saved'};};
+  ui.context.post=async(path,body)=>{ui.calls.push({path,body});return syntheticObservationReceipt(body,'p1');};
   await ui.submit(form);assert.equal(ui.calls.length,2);
   assert.deepEqual(JSON.stringify(ui.calls[0]),JSON.stringify(ui.calls[1]));
 });
@@ -452,4 +453,43 @@ test('normalized selection supports more than 100 observations without fabricati
   assert.equal(parsed.bundle.observations.length,101);
   assert.equal(parsed.bundle.observations[1].features.temperature_min_c,null);
   assert.match(observationImportSummary(parsed.bundle.observations[1]),/daily_utc/);
+});
+
+test('single-import 2xx with malformed, foreign-parcel or changed content keeps the exact form without success or refresh', async () => {
+  const corruptions = [() => ({}), () => ({ id: 'only-id' }), raw => ({ ...raw, parcel_id: 'p2' }),
+    raw => ({ ...raw, source_record_id: 'foreign-source' }), raw => ({ ...raw, features: { ndvi: 0.9 } }),
+    raw => ({ ...raw, quality: { ...raw.quality, usable: false } })];
+  for (const corrupt of corruptions) {
+    const ui = observationUi(), form = openForm(ui, secondJson), before = ui.run('JSON.stringify({selectedId,observations,analyses})');
+    ui.context.refreshCount = 0; ui.run('refresh=async()=>{refreshCount++;}');
+    ui.context.post = async (path, body) => { ui.calls.push({ path, body }); return corrupt(syntheticObservationReceipt(body, 'p1')); };
+    await ui.submit(form);
+    assert.equal(ui.modal.open, true); assert.equal(ui.modal.form, form); assert.equal(form.values.json, secondJson);
+    assert.equal(form.submit.disabled, false); assert.equal(form.observationFields.disabled, false);
+    assert.match(ui.modal.error.textContent, /回执.*尚未确认/); assert.match(ui.modal.error.textContent, /刷新.*核对/);
+    assert.doesNotMatch(ui.toast.textContent, /已导入|已确认|已保存/);
+    assert.equal(ui.context.refreshCount, 0); assert.equal(ui.run('JSON.stringify({selectedId,observations,analyses})'), before);
+  }
+});
+
+test('a confirmed single import stays confirmed when the following refresh fails', async () => {
+  const ui = observationUi(), form = openForm(ui, secondJson);
+  ui.run("refresh=async()=>{throw new Error('Synthetic refresh failure')}");
+  await ui.submit(form);
+  assert.equal(ui.modal.open, false); assert.equal(ui.calls.length, 1);
+  assert.match(ui.toast.textContent, /保存已确认.*手动刷新/);
+  assert.doesNotMatch(ui.toast.textContent, /原记录可能|重复导入|原样重试/);
+});
+
+for (const accepted of [false, true]) test(`late single-import ${accepted ? 'acknowledgment' : 'malformed 2xx'} cannot replace or close a newer form`, async () => {
+  const ui = observationUi(), form = openForm(ui, secondJson), pending = deferred();
+  ui.context.post = async (path, body) => { ui.calls.push({ path, body }); return pending.promise; };
+  const saving = ui.submit(form);
+  ui.run('closeModal()'); const newer = openForm(ui, firstJson), html = ui.modal.innerHTML;
+  pending.resolve(accepted ? syntheticObservationReceipt(ui.calls[0].body, 'p1') : { id: 'only-id' });
+  await saving;
+  assert.equal(ui.modal.form, newer); assert.equal(ui.modal.open, true); assert.equal(ui.modal.innerHTML, html);
+  assert.equal(newer.values.json, firstJson); assert.equal(ui.modal.error.hidden, true);
+  assert.equal(newer.submit.disabled, false); assert.equal(ui.calls.length, 1);
+  if (!accepted) assert.match(ui.toast.textContent, /先前表单保存未确认/);
 });

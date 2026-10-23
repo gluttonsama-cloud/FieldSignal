@@ -75,11 +75,11 @@ class WorkflowTests(unittest.TestCase):
         conflict=self.client.post(f"/api/v1/visits/{v['id']}/verifications",json={**payload,'note':'different'})
         self.assertEqual(conflict.status_code,409)
         self.assertEqual(self.client.get('/api/v1/visits').json()[0]['status'],'completed')
-        self.assertEqual(self.client.get('/api/v1/risks').json()[0]['status'],'verified')
+        self.assertEqual(self.client.get('/api/v1/risks').json()[0]['status'],'review_required')
         self.assertEqual(self.client.get('/api/v1/dashboard').json()['verification_count'],1)
-        # Running the same analysis never reopens a verified candidate.
+        # Running the same analysis never erases the outstanding review.
         self.client.post(f'/api/v1/parcels/{parcel}/analyses',json={})
-        self.assertEqual(self.client.get('/api/v1/risks').json()[0]['status'],'verified')
+        self.assertEqual(self.client.get('/api/v1/risks').json()[0]['status'],'review_required')
 
     def test_source_quality_time_and_provenance_validation(self):
         p=self.parcel()['id'];url=f'/api/v1/parcels/{p}/observations'
@@ -102,7 +102,8 @@ class WorkflowTests(unittest.TestCase):
     def test_missing_data_never_reported_healthy(self):
         p=self.parcel()['id']
         result=self.client.post(f'/api/v1/parcels/{p}/analyses',json={}).json()
-        self.assertEqual(result['status'],'insufficient_data')
+        self.assertEqual(result['status'],'blocked')
+        self.assertEqual(result['preview_status'],'insufficient_data')
         self.assertEqual(self.client.get('/api/v1/dashboard').json()['parcels'][0]['data_status'],'missing')
         self.assertEqual(self.client.get('/api/v1/risks').json(),[])
 
@@ -110,24 +111,24 @@ class WorkflowTests(unittest.TestCase):
         observations=[]
         for i in range(7):
             o=self.observation(1+i*7,.4 if i==0 else .7);o['id']=str(i);observations.append(o)
-        self.assertEqual(evaluate(observations,'statistical',self.now)['status'],'candidate')
-        self.assertEqual(evaluate(observations,'statistical',self.now+timedelta(days=20))['status'],'stale')
+        self.assertEqual(evaluate(observations,'statistical',self.now,mode='preview')['status'],'candidate')
+        self.assertEqual(evaluate(observations,'statistical',self.now+timedelta(days=20),mode='preview')['status'],'stale')
         for o in observations: o['quality']['cloud_fraction']=.99
-        self.assertEqual(evaluate(observations,'statistical',self.now)['status'],'insufficient_data')
+        self.assertEqual(evaluate(observations,'statistical',self.now,mode='preview')['status'],'insufficient_data')
         same_day=[]
         for i in range(8):
             o=self.observation(2);o['id']=str(i);same_day.append(o)
-        self.assertEqual(evaluate(same_day,'statistical',self.now)['status'],'insufficient_data')
+        self.assertEqual(evaluate(same_day,'statistical',self.now,mode='preview')['status'],'insufficient_data')
 
     def test_isolation_forest_runs_only_with_sufficient_past_samples(self):
         observations=[]
         for i in range(23):
             o=self.observation(1+i*3,.3 if i==0 else .69+(i%5)*.005);o['id']=str(i);observations.append(o)
-        self.assertEqual(evaluate(observations[:10],'isolation_forest',self.now)['status'],'insufficient_data')
-        result=evaluate(observations,'isolation_forest',self.now)
+        self.assertEqual(evaluate(observations[:10],'isolation_forest',self.now,mode='preview')['status'],'insufficient_data')
+        result=evaluate(observations,'isolation_forest',self.now,mode='preview')
         self.assertEqual(result['status'],'candidate')
         self.assertEqual(result['risk']['evidence']['baseline_count'],22)
-        self.assertEqual(result,evaluate(observations,'isolation_forest',self.now))
+        self.assertEqual(result,evaluate(observations,'isolation_forest',self.now,mode='preview'))
 
     def test_cross_parcel_risk_and_foreign_photos_are_rejected(self):
         parcel,risk=self.fixture_risk();other=self.parcel('另一地块')['id']

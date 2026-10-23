@@ -9,12 +9,12 @@ import { recordPhotoStrip, recordPhotoViewer, bindRecordPhotoEvents, retryRecord
 import { shortParcelId } from '../../src/display.ts';
 import { verificationNoteError } from '../../src/sync.ts';
 import { reviewContentKey, verificationReviewBody } from '../../src/verification-review.ts';
-import { recordCandidate, candidateSnapshot, candidateObservations } from '../../src/candidate-evidence.ts';
+import { recordCandidate, reportEventLink, followUpSource, candidateSnapshot, candidateObservations } from '../../src/candidate-evidence.ts';
 import { farmEventCsv, downloadFarmEventCsv } from '../../src/farm-event-export.ts';
 import { parcelBoundaryFile, downloadParcelBoundary } from '../../src/parcel-export.ts';
 import { ApiError } from '../../src/api.ts';
 import { defaultRecordFilters, recordFiltersActive, recordFilterError, filterVerifications, recordFilterDescription } from '../../src/record-filters.ts';
-import { validateParcelReceipt, validateVisitReceipt, validateFollowUpVisitReceipt, validateVisitPlanReceipt, validateFarmEventReceipt } from '../../src/record-receipts.ts';
+import { validateParcelReceipt, validateVisitReceipt, validateFollowUpVisitReceipt, validateVisitPlanReceipt, validateFarmEventReceipt, validateAnalysisReceipt, validateObservationReceipt } from '../../src/record-receipts.ts';
 import { validateCoreRead, validateObservationRead, validateAnalysisRead, validateEventRead } from '../../src/read-contracts.ts';
 import { DraftConflictError } from '../../src/drafts.ts';
 
@@ -100,9 +100,9 @@ export function harness({ pathname = '/admin' } = {}) {
     listDrafts: async () => [], saveDraft: async draft => { draft.revision = (draft.revision || 0) + 1; },
     parseObservationInput, observationImportSummary, observationBatchError, observationBatchReview, validateObservationBatchReceipt, observationBatchReceiptBody, parseParcelGeometry, parcelGeometrySummary,
     recordPhotoStrip, recordPhotoViewer, bindRecordPhotoEvents, retryRecordPhoto, zoomRecordPhoto,
-    recordCandidate, candidateSnapshot, candidateObservations, parcelBoundaryFile, downloadParcelBoundary, defaultRecordFilters, recordFiltersActive, recordFilterError, filterVerifications, recordFilterDescription, defaultVisitFilters, filterPendingVisits, visitFilterControls, visitPlanTiming,
+    recordCandidate, reportEventLink, followUpSource, candidateSnapshot, candidateObservations, parcelBoundaryFile, downloadParcelBoundary, defaultRecordFilters, recordFiltersActive, recordFilterError, filterVerifications, recordFilterDescription, defaultVisitFilters, filterPendingVisits, visitFilterControls, visitPlanTiming,
     farmEventCsv, downloadFarmEventCsv,
-    validateParcelReceipt, validateVisitReceipt, validateFollowUpVisitReceipt, validateVisitPlanReceipt, validateFarmEventReceipt, post: async () => ({}), DraftConflictError, ApiError, crypto, structuredClone, URL, Date, Error, SyntaxError, Promise,
+    validateParcelReceipt, validateVisitReceipt, validateFollowUpVisitReceipt, validateVisitPlanReceipt, validateFarmEventReceipt, validateAnalysisReceipt, validateObservationReceipt, post: async () => ({}), DraftConflictError, ApiError, crypto, structuredClone, URL, Date, Error, SyntaxError, Promise,
     validateCoreRead, validateObservationRead, validateAnalysisRead, validateEventRead,
     setTimeout() {}, HTMLButtonElement: Button,
     FormData: class { constructor(form) { this.form = form; } get(key) { return this.form.values[key]; } },
