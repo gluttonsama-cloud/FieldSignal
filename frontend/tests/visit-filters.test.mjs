@@ -56,7 +56,7 @@ test('mobile and admin filter the sorted pending base but do not hide candidates
 
 test('all local drafts remain visible, resumable and removable even with zero matching tasks',()=>{
  const ui=uiFor();ui.run(`visitFilters={timing:'today',assignee:'name:Not loaded',parcelId:'p2'};drafts=[{visit_id:'draft-A',parcel_id:'p1',parcel_name:'Draft snapshot A',parcel_season:'2025-2026',state:'draft',photos:[],data_origin:'fixture'},{visit_id:'draft-B',parcel_id:'p2',parcel_name:'Draft snapshot B',state:'error',photos:[],data_origin:'user'}]`);
- const html=ui.run('fieldVisits()');assert.match(html,/没有符合筛选的待巡田任务/);assert.doesNotMatch(html,/暂时没有巡田任务/);assert.match(html,/Draft snapshot A/);assert.match(html,/Draft snapshot B/);assert.match(html,/data-action="resume-draft" data-id="draft-A"/);assert.match(html,/data-action="remove-draft" data-id="draft-B"/);assert.match(html,/本机草稿不受下方筛选影响/);assert.match(html,/种植季未保存/);assert.match(html,/任务 draft-A/);
+ const html=ui.run('fieldVisits()');assert.match(html,/没有符合筛选的待巡田任务/);assert.doesNotMatch(html,/暂时没有巡田任务/);assert.match(html,/Draft snapshot A/);assert.match(html,/Draft snapshot B/);assert.match(html,/data-action="resume-draft" data-id="draft-A"/);assert.match(html,/data-action="remove-draft" data-id="draft-B"/);assert.match(html,/本机草稿不受下方筛选影响/);assert.match(html,/种植季未保存/);assert.match(html,/2025-2026 · #p1/);assert.doesNotMatch(html,/任务 draft-A/);
 });
 
 test('empty source list is distinct from nonempty zero-match filter results',()=>{

@@ -344,9 +344,12 @@ class FollowUpVisitTests(unittest.TestCase):
             self.store.update(c,'visits',{**created,'source_verification_id':other_source['id']})
         self.assert_error(self.complete(created['id']),422,'invalid_follow_up_source')
         self.assertEqual(self.count('verifications'),2)
-        self.assertEqual(next(v for v in self.service.list('visits') if v['id']==created['id'])['status'],'pending')
+        # Reads must not fabricate a valid event link for the corrupted source.
+        self.assert_error(self.client.get('/api/v1/visits'),422,'invalid_follow_up_source')
+        with self.store.connect() as c:
+            self.assertEqual(self.store.get(c,'visits',created['id'])['status'],'pending')
 
-    def test_follow_up_never_reopens_candidate_or_changes_original_evidence(self):
+    def test_follow_up_keeps_unresolved_event_and_original_evidence(self):
         with patch('app.application.service.datetime',wraps=datetime) as service_clock,patch('app.domain.detection.datetime',wraps=datetime) as detection_clock:
             service_clock.now.return_value=detection_clock.now.return_value=datetime(2020,3,1,tzinfo=timezone.utc)
             seed=self.post('/api/v1/dev/fixtures',{}).json()
@@ -359,22 +362,23 @@ class FollowUpVisitTests(unittest.TestCase):
         created=self.follow_up(source=source['id'],key='fixture-follow-up')
         self.assertEqual(created.status_code,201,created.text)
         self.assertEqual(created.json()['data_origin'],'fixture')
-        self.assertIsNone(created.json()['risk_id'])
+        self.assertEqual(created.json()['risk_id'],run['risk_id'])
         # Reusing the original photo is not permitted and does not change it.
         self.assert_error(self.complete(created.json()['id'],photo_ids=source['photo_ids']),422,'photo_mismatch')
         new_photo=self.upload_photo(created.json()['id'],'blue')
         result=self.complete(created.json()['id'],label='normal',photo_ids=[new_photo['id']])
         self.assertEqual(result.status_code,201,result.text)
         with self.store.connect() as c:
-            for table in ['risks','observations']:
+            for table in ['observations']:
                 self.assertEqual([tuple(row) for row in c.execute(f'SELECT * FROM {table} ORDER BY id')],snapshots[table])
             for table in ['verifications','photos']:
                 for row in snapshots[table]:
                     self.assertEqual(tuple(c.execute(f'SELECT * FROM {table} WHERE id=?',(row[0],)).fetchone()),row)
             self.assertEqual(tuple(c.execute('SELECT * FROM visits WHERE id=?',(original['id'],)).fetchone()),original_visit)
             risk=self.store.get(c,'risks',run['risk_id'])
-            self.assertEqual(risk['status'],'verified')
-            self.assertEqual(risk['verification_id'],source['id'])
+            self.assertEqual(risk['status'],'review_required')
+            self.assertEqual(risk['disposition'],'unresolved')
+            self.assertEqual(risk['verification_id'],result.json()['id'])
         # Completed follow-up verifications can themselves be an explicit source.
         chained=self.follow_up(source=result.json()['id'])
         self.assertEqual(chained.status_code,201,chained.text)

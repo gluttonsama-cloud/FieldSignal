@@ -52,7 +52,7 @@ test('follow-up evidence retains its source identity without inventing a new or 
   assert.doesNotMatch(ui.modal.innerHTML,/自主巡田，未关联|当时保存的算法候选|previous-<report>/);assert.equal(reads,0);
   await ui.click('close-dialog');ui.run('visits[0].risk_id=savedRisk.id');
   await ui.click('view-record-evidence',{record:'record-1'});
-  assert.match(ui.modal.innerHTML,/来源关系不一致/);assert.doesNotMatch(ui.modal.innerHTML,/当时保存的算法候选/);assert.equal(reads,0);
+  assert.match(ui.modal.innerHTML,/复查来源.*尚未确认/);assert.doesNotMatch(ui.modal.innerHTML,/当时保存的算法候选/);assert.equal(reads,0);
 });
 
 test('pending field tasks expose their own candidate evidence before starting verification, without inventing a routine or mismatched association',async()=>{
@@ -100,4 +100,27 @@ test('read failures allow explicit retry; close, Escape and reopened sessions ca
   // The displayed risk snapshot stays frozen while a background refresh updates the cache.
   ui.run("risks[0].evidence.baseline_observation_ids=['newer-unrelated'];risks[0].evidence.score=999");
   pending[3].resolve(rows());await turn();assert.match(third.innerHTML,/source-base-1/);assert.doesNotMatch(third.innerHTML,/newer-unrelated/);assert.doesNotMatch(ui.modal.innerHTML,/999/);
+});
+
+test('same-event follow-up report can inspect original candidate only after matching source report and source task', async () => {
+  const ui=setup(),requests=[];
+  ui.context.api=async path=>{requests.push(path);return rows();};
+  ui.run("visits.push({id:'followup',parcel_id:'p1',risk_id:savedRisk.id,source_verification_id:'record-1',status:'completed'});verifications[0].risk_id=savedRisk.id;verifications.push({...verifications[0],id:'followup-report',visit_id:'followup',source_verification_id:'record-1'});");
+  const before=ui.run('JSON.stringify({visits,verifications,risks})');
+  await ui.click('view-record-evidence',{record:'followup-report'});await turn();
+  assert.match(ui.modal.innerHTML,/当时保存的算法候选/);assert.match(ui.modal.innerHTML,/risk-&lt;old&gt;/);
+  assert.deepEqual(requests,['/parcels/p1/observations']);assert.equal(ui.run('JSON.stringify({visits,verifications,risks})'),before);
+});
+
+test('follow-up event mismatches and conflicting report/task claims do not expose evidence or send reads', async () => {
+  for(const mutate of [
+    "visits[1].risk_id='foreign-risk'", "verifications[0].risk_id='foreign-risk'", "verifications[1].risk_id='foreign-risk'",
+    "verifications[0].parcel_id='p2'", "visits[0].parcel_id='p2'", "verifications.splice(0,1)",
+    "verifications.push({...verifications[0]})", "visits.push({...visits[0]})", "risks.push({...risks[0]})",
+  ]){
+    const ui=setup();let reads=0;ui.context.api=async()=>{reads++;return rows();};
+    ui.run("visits.push({id:'followup',parcel_id:'p1',risk_id:savedRisk.id,source_verification_id:'record-1',status:'completed'});verifications[0].risk_id=savedRisk.id;verifications.push({...verifications[0],id:'followup-report',visit_id:'followup',source_verification_id:'record-1'});");
+    ui.run(mutate);await ui.click('view-record-evidence',{record:'followup-report'});await turn();
+    assert.doesNotMatch(ui.modal.innerHTML,/当时保存的算法候选/);assert.equal(reads,0,mutate);
+  }
 });

@@ -26,6 +26,18 @@ function setup(pathname='/field'){
 }
 const core=ui=>ui.run('JSON.stringify({health,dashboard,risks,visits,verifications,selectedId,lastLoaded})');
 
+test('a first-load failure never presents the action overview as zero work, and an explicit refresh restores it',async()=>{
+ const ui=setup('/admin');try{
+  ui.run("dashboard={parcel_count:0,open_risk_count:0,pending_visit_count:0,verification_count:0,parcels:[],recent_verifications:[]};visits=[];verifications=[];selectedId='';lastLoaded='';connected=false;");
+  ui.responses['/visits']={};await ui.run('realRefresh()');
+  assert.match(ui.app.innerHTML,/待办尚未读取/);
+  assert.doesNotMatch(ui.app.innerHTML,/目前没有待巡田任务|还没有需要复核的报告|先建立地块档案|<b>0<\/b>/);
+  Object.assign(ui.responses,valid());ui.run('refresh=realRefresh');await ui.click('refresh');
+  assert.equal(ui.run('loadError'),'');assert.match(ui.app.innerHTML,/Synthetic retained parcel/);assert.match(ui.app.innerHTML,/1<\/b> 次待巡田/);
+  assert.doesNotMatch(ui.app.innerHTML,/待办尚未读取/);assert.ok(ui.calls.every(call=>call.method==='GET'));
+ }finally{ui.restore();}
+});
+
 test('malformed successful core responses are rejected atomically without poisoning either real rendered interface',async()=>{
  for(const pathname of ['/field','/admin'])for(const [path,bad] of [
   ['/visits',{}],['/visits',[null]],['/visits',[{...visit,due_date:{}}]],['/verifications',{}],['/verifications',[{}]],['/verifications',[{...record,photo_ids:{}}]],

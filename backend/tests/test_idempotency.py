@@ -160,12 +160,16 @@ class IdempotencyTests(unittest.TestCase):
         self.assertEqual(retry.status_code,201,retry.text)
         self.assertEqual(retry.json(),first.json())
         self.assertEqual(reopened.get('/api/v1/visits').json()[0]['status'],'completed')
-        self.assertEqual(reopened.get('/api/v1/risks').json()[0]['status'],'verified')
+        self.assertEqual(reopened.get('/api/v1/risks').json()[0]['status'],'review_required')
+        # A completed visit does not resolve its event. One explicitly requested
+        # new visit is allowed; the shared pending guard still rejects duplicates.
+        next_visit=self.post('/api/v1/visits',body)
+        self.assertEqual(next_visit.status_code,201,next_visit.text)
         for key in [None,'different-visit']:
             rejected=self.post('/api/v1/visits',body,key)
             self.assertEqual(rejected.status_code,409,rejected.text)
-            self.assertEqual(rejected.json()['error']['code'],'risk_verified')
-        self.assertEqual(self.count('visits'),1)
+            self.assertEqual(rejected.json()['error']['code'],'duplicate_visit')
+        self.assertEqual(self.count('visits'),2)
         self.assertEqual(self.count('idempotency_receipts'),1)
 
     def test_changed_parcel_content_conflicts_but_new_key_allows_intentional_create(self):

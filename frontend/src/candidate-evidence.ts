@@ -2,18 +2,51 @@ import { esc } from './display.ts';
 import { utcTime } from './sources.ts';
 import type { Observation, Risk, Verification, Visit } from './types';
 
-// Follow the saved relationship, never the currently selected parcel or newest risk.
-export function recordCandidate(record: Verification, visits: Visit[], risks: Risk[]): { risk?: Risk; message?: string } {
-  const visit=visits.find(item=>item.id===record.visit_id);
-  if(!visit)return {message:'关联巡田任务尚未读取，无法确认候选关联。请关闭并刷新记录后重试。'};
+// A report's event is known only through its own task, never the selected
+// parcel or newest candidate. Omitted legacy claims do not manufacture a link.
+export function reportEventLink(record: Verification, visits: Visit[]): { visit?: Visit; riskId?: string | null; message?: string } {
+  const matches=visits.filter(item=>item.id===record.visit_id);
+  if(matches.length!==1)return {message:'关联巡田任务尚未读取或编号不唯一，无法确认候选关联。请关闭并刷新记录后重试。'};
+  const visit=matches[0];
   if(visit.parcel_id!==record.parcel_id)return {message:'巡田任务与核查记录的地块不一致，未展示候选依据。'};
-  if(visit.source_verification_id){
-    if(visit.risk_id)return {message:'复查任务同时含有候选关联，来源关系不一致，未展示候选依据。请刷新并核对原记录。'};
-    return {message:`此任务是对核查 ${visit.source_verification_id} 的复查，未直接关联新的算法候选。请查看上次核查及其原候选依据；本次现场报告不修改上次结论。`};
+  const invalidId=(value: unknown)=>value!=null&&(typeof value!=='string'||!value.trim()||value!==value.trim());
+  if(invalidId(record.risk_id)||invalidId(visit.risk_id)||
+      (record.risk_id!==undefined&&visit.risk_id!==undefined&&record.risk_id!==visit.risk_id)||
+      (record.source_verification_id!==undefined&&record.source_verification_id!==(visit.source_verification_id??null))){
+    return {message:'报告与巡田任务的来源关系不一致，未展示候选依据。请刷新并核对原记录。'};
   }
-  if(!visit.risk_id)return {message:'自主巡田，未关联异常候选；没有算法候选依据。现场反馈仍保存在原核查记录中。'};
-  const risk=risks.find(item=>item.id===visit.risk_id);
-  if(!risk)return {message:`关联候选 ${visit.risk_id} 尚未读取或已缺失，无法展示依据。请关闭并刷新记录后重试。`};
+  return {visit,riskId:record.risk_id!==undefined?record.risk_id:visit.risk_id??null};
+}
+
+/** Resolve this one source edge from already-loaded records, without requests. */
+export function followUpSource(visit: Visit, visits: Visit[], records: Verification[]): { record?: Verification; message?: string } {
+  if(!visit.source_verification_id)return {};
+  const sources=records.filter(record=>record.id===visit.source_verification_id);
+  if(sources.length!==1)return {message:'上次核查尚未读取或已缺失、编号不唯一，不能用其他记录替代。'};
+  const record=sources[0];
+  if(record.parcel_id!==visit.parcel_id)return {message:'源核查与复查任务的地块不一致，未展示不匹配的记录。'};
+  const link=reportEventLink(record,visits);
+  if(link.message)return {message:link.message};
+  if(record.visit_id===visit.id||(visit.risk_id!=null&&visit.risk_id!==link.riskId)){
+    return {message:'复查与源核查的候选来源关系不一致，未展示来源依据。请刷新并核对原记录。'};
+  }
+  return {record};
+}
+
+// Follow the saved relationship, never the currently selected parcel or newest risk.
+export function recordCandidate(record: Verification, visits: Visit[], risks: Risk[], records: Verification[] = []): { risk?: Risk; message?: string } {
+  const link=reportEventLink(record,visits);
+  if(link.message)return {message:link.message};
+  const visit=link.visit!;
+  if(visit.source_verification_id){
+    if(!link.riskId)return {message:`此任务是对核查 ${visit.source_verification_id} 的复查，未直接关联新的算法候选。请查看上次核查及其原候选依据；本次现场报告不修改上次结论。`};
+    const source=followUpSource(visit,visits,records);
+    if(!source.record)return {message:`复查来源 ${visit.source_verification_id} 尚未确认：${source.message||'请刷新核对。'}未展示候选依据。`};
+  }
+  if(!link.riskId)return {message:'自主巡田，未关联异常候选；没有算法候选依据。现场反馈仍保存在原核查记录中。'};
+  const matches=risks.filter(item=>item.id===link.riskId);
+  if(matches.length!==1)return {message:`关联候选 ${link.riskId} 尚未读取或已缺失、编号不唯一，无法展示依据。请关闭并刷新记录后重试。`};
+  const risk=matches[0];
   if(risk.parcel_id!==record.parcel_id)return {message:'候选与核查记录的地块不一致，未展示候选依据。'};
   return {risk};
 }

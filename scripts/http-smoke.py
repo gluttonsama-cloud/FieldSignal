@@ -87,6 +87,7 @@ with tempfile.TemporaryDirectory(prefix='fieldsignal-http-') as temp:
             assert upload_synthetic_photo()==photo
             source_payload={'observed_at':'2020-03-30T20:00:00.123456+08:00','label':'uncertain','note':'\u0085Synthetic original report, requires a manual recheck\u0085','photo_ids':[photo['id']],'client_submission_id':'http-original-report'}
             source=post(f"/api/v1/visits/{visit['id']}/verifications",source_payload)
+            assert source['disposition']=='review_required' and source['label_source']=='field_report_unadjudicated'
             assert post(f"/api/v1/visits/{visit['id']}/verifications",source_payload)==source
             confirmed_photo=upload_synthetic_photo()
             assert confirmed_photo['id']==photo['id'] and confirmed_photo['state']=='confirmed'
@@ -110,6 +111,8 @@ with tempfile.TemporaryDirectory(prefix='fieldsignal-http-') as temp:
             else:raise AssertionError('Follow-up observed before original unexpectedly succeeded')
             recheck_payload['observed_at']='2020-03-31T12:00:00Z'
             recheck=post(f"/api/v1/visits/{follow_up['id']}/verifications",recheck_payload)
+            assert recheck['disposition']=='review_required' and recheck['source_verification_id']==source['id']
+            assert get('/api/v1/dashboard')['review_required_count']==2,'A normal follow-up is still not adjudication'
             assert post(f"/api/v1/visits/{follow_up['id']}/verifications",recheck_payload)==recheck
             actual_visits=get('/api/v1/visits');completed_follow_up=next(v for v in actual_visits if v['id']==follow_up['id'])
             assert completed_follow_up['status']=='completed' and completed_follow_up['source_verification_id']==source['id']
@@ -152,20 +155,29 @@ with tempfile.TemporaryDirectory(prefix='fieldsignal-http-') as temp:
             assert len(get(f"/api/v1/parcels/{parcel['id']}/observations"))==6
             assert not get(f"/api/v1/parcels/{parcel['id']}/analyses"),'Import must not automatically run analysis'
             analysis=post(f"/api/v1/parcels/{parcel['id']}/analyses",{'method':'statistical'})
-            assert analysis['status']=='stale','Historic synthetic input must not become a current alert'
+            assert analysis['status']=='blocked' and analysis['preview_status']=='stale','Historic synthetic input must not become a current alert'
+            assert analysis['mode']=='preview' and analysis['monitoring_eligible'] is False and analysis['risk_id'] is None
+            assert not get('/api/v1/risks'),'Declared local metrics must not create formal monitoring candidates'
+            single_payload=json.loads(json.dumps(batch['observations'][0]))
+            single_payload['source_record_id']='http-synthetic-single-record'
+            single=post(f"/api/v1/parcels/{parcel['id']}/observations",single_payload)
             read_module=(ROOT/'frontend/src/read-contracts.ts').as_uri()
             farm_export_module=(ROOT/'frontend/src/farm-event-export.ts').as_uri()
             read_script=(f'import {{validateCoreRead,validateObservationRead,validateAnalysisRead,validateEventRead}} from {json.dumps(read_module)};'
+                +f'import {{validateAnalysisReceipt,validateObservationReceipt}} from {json.dumps(receipt_module)};'
                 +f'import {{farmEventCsv}} from {json.dumps(farm_export_module)};'
                 +"import assert from 'node:assert/strict';"
                 +"import {readFileSync} from 'node:fs';const x=JSON.parse(readFileSync(0,'utf8'));"
                 +"validateCoreRead(x.core);validateObservationRead(x.observations,x.parcel_id);"
                 +"validateAnalysisRead(x.analyses,x.parcel_id);validateEventRead(x.events,x.parcel_id);"
+                +"validateAnalysisReceipt(x.analyses[0],x.core[1].parcels.find(p=>p.id===x.parcel_id),{method:'statistical'});"
+                +"validateObservationReceipt(x.single,x.parcel_id,x.single_payload);"
                 +"const before=JSON.stringify(x);const csv=farmEventCsv(x.events,x.core[1].parcels.find(p=>p.id===x.parcel_id),{},'Synthetic loaded HTTP snapshot');"
                 +"assert.ok(csv.startsWith('\\uFEFF'));for(const e of x.events){assert.ok(csv.includes(e.id));assert.ok(csv.includes(e.occurred_on));assert.ok(csv.includes(e.created_at));}"
                 +"assert.ok(csv.includes('非诊断'));assert.equal(JSON.stringify(x),before);")
             read_snapshot={'core':[health,get('/api/v1/dashboard'),get('/api/v1/risks'),get('/api/v1/visits'),get('/api/v1/verifications')],
                 'parcel_id':parcel['id'],'observations':get(f"/api/v1/parcels/{parcel['id']}/observations"),
+                'single':single,'single_payload':single_payload,
                 'analyses':get(f"/api/v1/parcels/{parcel['id']}/analyses"),'events':get(f"/api/v1/parcels/{parcel['id']}/events")}
             subprocess.run(['node','--experimental-strip-types','--input-type=module','-e',read_script],
                 input=json.dumps(read_snapshot),text=True,capture_output=True,check=True,cwd=ROOT)

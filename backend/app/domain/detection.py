@@ -10,13 +10,62 @@ LIMITATIONS=[
     '当前仅使用同源NDVI，SAR和气象已可存储但尚未融合。',
 ]
 
-def eligible(o):
+def quality_eligible(o):
+    """Numeric/quality suitability only. This is not source qualification."""
     q=o['quality']
     return o['source']=='sentinel2' and o['features'].get('ndvi') is not None and q['usable'] and q['valid_fraction']>=0.6 and q.get('cloud_fraction') is not None and q['cloud_fraction']<=0.4
 
-def evaluate(observations, method, now=None):
+def eligible(o, *, mode='monitoring'):
+    """Fail closed for formal monitoring; callers must opt into exploration.
+
+    The current import API accepts declared metrics/digests, not independently
+    checked source assets, parcel-mask alignment or crop truth. No JSON field,
+    hash or provider name can grant monitoring eligibility. A future qualified
+    source adapter must establish those bindings before this gate can change.
+    Fixtures are a separate server-created demonstration, never monitoring.
+    """
+    if mode=='preview':
+        return o.get('data_origin') not in {'fixture','public_sample'} and quality_eligible(o)
+    if mode=='fixture_demo':
+        return o.get('data_origin')=='fixture' and quality_eligible(o)
+    return False
+
+def qualification(observations, parcel_geometry_sha256, *, fixture=False):
+    """Describe declarations without promoting them to independent evidence.
+
+    Declared-only requires geometry, mask-to-asset and spatial/quality count
+    bindings on every optical row. Even complete declarations are not proof
+    that the assets match a real parcel, crop or authenticated source.
+    """
+    if fixture:
+        return {'mode':'fixture_demo','qualification_status':'fixture_demo','monitoring_eligible':False,'qualification_reasons':['synthetic_fixture']}
+    optical=[o for o in observations if o.get('source')=='sentinel2']
+    reasons=set()
+    for o in optical:
+        provenance=o.get('provenance',{});support=provenance.get('spatial_support') or {};quality=o.get('quality',{})
+        if provenance.get('usage_scope')!='parcel': reasons.add('unverified_scope')
+        if provenance.get('parcel_geometry_sha256')!=parcel_geometry_sha256: reasons.add('geometry_binding_missing')
+        mask=provenance.get('parcel_mask_sha256');assets=provenance.get('asset_checksums',{})
+        if not mask or mask not in assets.values() or support.get('kind')!='parcel': reasons.add('mask_binding_missing')
+        total=support.get('total_pixels');valid=support.get('valid_pixels')
+        bounds=support.get('bounds');pixel_size=support.get('pixel_size_m')
+        if (not support.get('crs') or not bounds or len(bounds)!=4
+                or not isinstance(pixel_size,(int,float)) or isinstance(pixel_size,bool) or pixel_size<=0
+                or not isinstance(total,int) or isinstance(total,bool) or total<1
+                or not isinstance(valid,int) or isinstance(valid,bool) or not 0<=valid<=total
+                or quality.get('cloud_fraction') is None
+                or abs(quality.get('valid_fraction',-1)-valid/total)>1e-6):
+            reasons.add('quality_binding_missing')
+    if not optical: reasons.add('no_optical_observations')
+    status='unverified' if reasons else 'declared_only'
+    # There is intentionally no client-settable approval or implied source
+    # attestation. Local normalized imports stay preview-only in this increment.
+    reasons.add('source_not_verified')
+    return {'mode':'preview','qualification_status':status,'monitoring_eligible':False,'qualification_reasons':sorted(reasons)}
+
+def evaluate(observations, method, now=None, *, mode='monitoring'):
     now=now or datetime.now(timezone.utc)
-    good=sorted([o for o in observations if eligible(o) and datetime.fromisoformat(o['observed_at'])<=now],key=lambda o:o['observed_at'])
+    good=sorted([o for o in observations if eligible(o,mode=mode) and datetime.fromisoformat(o['observed_at'])<=now],key=lambda o:o['observed_at'])
     count=len(good)
     base={'observation_count':count,'risk':None}
     if not good:
